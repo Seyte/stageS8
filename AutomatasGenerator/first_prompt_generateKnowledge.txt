@@ -1,0 +1,118 @@
+You will use the prompt I give you in natural langage and translate it into a .dot file. Here are some exemples:
+Q:
+ in state state 0 the system returns 1 and it moves to state 1 on occurence of a.
+ from state 1 the output 2 is produced and state 0 is reached on occurence of b.
+ in state 1 , 0 is produced and 1 is reached if the input a occurs.
+ , 0 is returned and the application moves to 0 if the input c occurs in  1.
+ the system produces 2 and the system moves to state 1 if the input is c when the system is in state 0.
+ from state 0 , 2 is produced and the system reaches 0 on occurence of b.
+A:
+#Let's work this out in a step by step way to be sure we have the right answer.
+#First, we have to put the name of the graph:
+digraph fsm{
+	#Then, you can see that there are 2 states: 0 and 1. So we have to put them in the graph:
+	s_0 [label="0" shape="circle"]
+	s_1 [label="1" shape="circle"]
+	#Then, we have to put the transitions. For example, the first line says that from state 0, if the input is a, the system returns 1 and moves to state 1. So we have to put:
+	s_0 -> s_1[label="a/1"]
+	#Then, we have to put the other transitions. The second line says that from state 1, if the input is b, the system returns 2 and moves to state 0. So we have to put:
+	s_1 -> s_0[label="b/2"]
+	#Then, we have to put the other transitions. The third line says that from state 1, if the input is a, the system returns 0 and stays in state 1. So we have to put:
+	s_1 -> s_1[label="a/0"]
+	#Then, we have to put the other transitions. The fourth line says that from state 1, if the input is c, the system returns 0 and moves to state 0. So we have to put:
+	s_1 -> s_0[label="c/0"]
+	#Then, we have to put the other transitions. The fifth line says that from state 0, if the input is c, the system returns 2 and moves to state 1. So we have to put:
+	s_0 -> s_1[label="c/2"]
+	#Then, we have to put the other transitions. The sixth line says that from state 0, if the input is b, the system returns 2 and stays in state 0. So we have to put:
+	s_0 -> s_0[label="b/2"]
+# Finally, we put the end of the graph token:
+}
+
+Q: 
+ the system returns 0 and the application reaches state 2 on occurence of b when the system is in state 2.
+ , 0 is returned and it reaches 3 if the input is b in  state 0.
+ it produces 2 and it reaches 0 if  c occurs when it is in state 1.
+ from state state 1 , 0 is produced and 3 is reached on occurence of b.
+ when the system is in state 0 , 2 is returned and state 3 is reached on occurence of c.
+ the application returns 2 and the application reaches state 0 if the input a occurs from state 2.
+ the system produces 2 and the system reaches 1 on occurence of input c from state state 2.
+ in state state 3 it returns 1 and the application reaches 1 if  c occurs.
+ the system returns 0 and the application moves to state 0 if  a occurs when the system is in state 0.
+ in  state 3 it produces 1 and state 3 is reached if the input is a.
+ the application produces 1 and 3 is reached if the input is a when it is in state 1.
+ it produces 2 and the application reaches state 0 if the input b occurs from state 3.
+A: 
+#Let's work this out in a step by step way to be sure we have the right answer.
+#First, we have to put the name of the graph:
+digraph fsm{
+	#Then, you can see that there are 4 states: 0, 1, 2 and 3. So we have to put them in the graph:
+	s_0 [label="0" shape="circle"]
+	s_1 [label="1" shape="circle"]
+	s_2 [label="2" shape="circle"]
+	s_3 [label="3" shape="circle"]
+	#Then, we have to put the transitions. For example, the first line says that from state 2, if the input is b, the system returns 0 and stays in state 2. So we have to put:
+	s_2 -> s_2[label="b/0"]
+	#Then, we have to put the other transitions. The second line says that from state 0, if the input is b, the system returns 0 and moves to state 3. So we have to put:
+	s_0 -> s_3[label="b/0"]
+	#Then, we have to put the other transitions. The third line says that from state 1, if the input is c, the system returns 2 and moves to state 0. So we have to put:
+	s_1 -> s_0[label="c/2"]
+	#Then, we have to put the other transitions. The fourth line says that from state 1, if the input is b, the system returns 0 and moves to state 3. So we have to put:
+	s_1 -> s_3[label="b/0"]
+	#Then, we have to put the other transitions. The fifth line says that from state 0, if the input is c, the system returns 2 and moves to state 3. So we have to put:
+	s_0 -> s_3[label="c/2"]
+	#Then, we have to put the other transitions. The sixth line says that from state 2, if the input is a, the system returns 2 and moves to state 0. So we have to put:
+	s_2 -> s_0[label="a/2"]
+	#Then, we have to put the other transitions. The seventh line says that from state 2, if the input is c, the system returns 2 and moves to state 1. So we have to put:
+	s_2 -> s_1[label="c/2"]
+	#Then, we have to put the other transitions. The eighth line says that from state 3, if the input is c, the system returns 1 and moves to state 1. So we have to put:
+	s_3 -> s_1[label="c/1"]
+	#Then, we have to put the other transitions. The ninth line says that from state 0, if the input is a, the system returns 0 and stays in state 0. So we have to put:
+	s_0 -> s_0[label="a/0"]
+	#Then, we have to put the other transitions. The tenth line says that from state 3, if the input is a, the system returns 1 and stays in state 3. So we have to put:
+	s_3 -> s_3[label="a/1"]
+	#Then, we have to put the other transitions. The eleventh line says that from state 1, if the input is a, the system returns 1 and moves to state 3. So we have to put:
+	s_1 -> s_3[label="a/1"]
+	#Then, we have to put the other transitions. The twelfth line says that from state 3, if the input is b, the system returns 2 and moves to state 0. So we have to put:
+	s_3 -> s_0[label="b/2"]
+# Finally, we put the end of the graph token:
+}
+Q:
+ from state 1 , 1 is returned and the system reaches 0 on occurence of a.
+ from state 0 , 1 is produced and the system moves to 0 on occurence of input c.
+ when the system is in 0 the output 0 is produced and state 0 is reached on occurence of b.
+ it returns 2 and it reaches 0 on occurence of b from state 1.
+ the application produces 2 and 1 is reached if  c occurs when it is in state 1.
+ it produces 2 and 1 is reached on occurence of a when the system is in state 0.
+A:
+#Let's work this out in a step by step way to be sure we have the right answer.
+#First, we have to put the name of the graph:
+digraph fsm{
+	#Then, you can see that there are 2 states: 0 and 1. So we have to put them in the graph:
+	s_0 [label="0" shape="circle"]
+	s_1 [label="1" shape="circle"]
+	#Then, we have to put the transitions. For example, the first line says that from state 1, if the input is a, the system returns 1 and moves to state 0. So we have to put:
+	s_1 -> s_0[label="a/1"]
+	#Then, we have to put the other transitions. The second line says that from state 0, if the input is c, the system returns 1 and stays in state 0. So we have to put:
+	s_0 -> s_0[label="c/1"]
+	#Then, we have to put the other transitions. The third line says that from state 0, if the input is b, the system returns 0 and stays in state 0. So we have to put:
+	s_0 -> s_0[label="b/0"]
+	#Then, we have to put the other transitions. The fourth line says that from state 1, if the input is b, the system returns 2 and moves to state 0. So we have to put:
+	s_1 -> s_0[label="b/2"]
+	#Then, we have to put the other transitions. The fifth line says that from state 1, if the input is c, the system returns 2 and moves to state 1. So we have to put:
+	s_1 -> s_1[label="c/2"]
+	#Then, we have to put the other transitions. The sixth line says that from state 0, if the input is a, the system returns 2 and moves to state 1. So we have to put:
+	s_0 -> s_1[label="a/2"]
+# Finally, we put the end of the graph token:
+}
+
+Now wait for any prompt that starts with " Q: ".  Respond to this first message with " Waiting for any prompt ". 
+Please provide the .dot file content based on the given prompt. Only include the necessary information to construct the graph without any explanations or reasoning. Here's the prompt:
+
+Q:
+[Your prompt goes here]
+
+A:
+
+[Provide the .dot file content here]
+
+Do not include any other information in your response. Do not include "A:" in the answer. All comments must start with "#". 

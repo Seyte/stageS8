@@ -1,0 +1,10 @@
+#MacOS
+.DS_Store
+# Ignore sensible file
+/AutomatasGenerator/openai_key.txt
+
+# ignore tests
+/Tests/data
+/data
+
+/AutomatasGenerator/__pycache__
