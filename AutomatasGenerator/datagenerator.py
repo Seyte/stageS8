@@ -35,7 +35,7 @@ def fsmRandomGenInputComplete(nbStates =2,inputAlphabet =['a','b','c'], outputAl
         if not (fsm.getState(idSrcState).defineTransitionOn(input)):
             output = random.choice(outputAlphabet)
             tr = fsm.addTransition(idSrcState,idTgtState,input,output)
-            print(tr.toDot()) 
+            #print(tr.toDot()) 
         fin = (fsm.nbTransitions()>=maxNbTransition)  
     return fsm  
     

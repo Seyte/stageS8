@@ -8,3 +8,8 @@
 /data
 
 /AutomatasGenerator/__pycache__
+
+/runs
+/Models/__pycache__
+
+model.pth

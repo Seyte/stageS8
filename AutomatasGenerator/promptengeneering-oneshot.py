@@ -4,13 +4,15 @@ from filecomparator import compare_files
 from datagenerator import generate_files
 import time
 import matplotlib.pyplot as plt
-NB_NODES_TO_TEST = 5
-NB_TEST_PER_NODE = 20
+NB_NODES_TO_TEST = 10
+NB_TEST_PER_NODE = 25
 PRICE_PER_TOKEN = 0.002/1000
+
+percentage_of_wrong_lines = [0]*NB_NODES_TO_TEST
 # won't work if you don't have a file named openai_key.txt in the same directory as this file
 # it should contain your openai key
 API_KEY = open(str(os.path.dirname(os.path.abspath(__file__))) + "/openai_key.txt", "r").read() # unsafe but convenient, I used a new free account for this demo.
-FIRST_PROMPT = open(str(os.path.dirname(os.path.abspath(__file__))) + "/first_prompt_QandA.txt", "r").read()
+FIRST_PROMPT = open(str(os.path.dirname(os.path.abspath(__file__))) + "/first_prompt_generateKnowledge.txt", "r").read()
 openai.api_key = API_KEY
 credits = 0
 PATH_TO_DATA = str(os.path.dirname(os.path.abspath(__file__))) + "/../data"
@@ -43,21 +45,28 @@ for i in range (2, NB_NODES_TO_TEST + 2):
             except openai.error.RateLimitError:
                 print("Rate limit error, waiting 10 seconds...")
                 time.sleep(10)
-        '''        
-        print(response)
-        print("GPT : " + response.choices[-1].message.content)
-        print("I used " + str(response['usage']['total_tokens']) + " tokens which corresponds to "+str(float(response['usage']['total_tokens'])*PRICE_PER_TOKEN) + " e.")
-        '''
         credits += response['usage']['total_tokens']
         # write the result in a file tmp.txt
         f.write(response.choices[-1].message.content)
         f.close()
         # compare the result with the original file
         print("Comparing the files...")
+        # print result
+        print(response.choices[-1].message.content)
+        # print original file .dot
+        print(open(PATH_TO_DATA + "/exemple" + str(j) +"/fsm.dot", "r").read())
         # if the files are the same, the test has succedded
         comparation = compare_files("tmp.txt", PATH_TO_DATA + "/exemple" + str(j) +"/fsm.dot")
+        print(comparation)
+        comparation_lines = comparation.splitlines()
+        # count the number of differences between the two files
+        print((len(comparation_lines)-1)/2)
+        # count the number of lines in FILE_TO_TRANSFORM
+        print("errors over:")
+        print(len(FILE_TO_TRANSFORM.splitlines()))
+        percentage_of_wrong_lines[i-2] += (len(comparation_lines)-1)/2/len(FILE_TO_TRANSFORM.splitlines())
+        print(percentage_of_wrong_lines)
         if (comparation == "SUCCESS"):
-            print(i)
             has_succedded[i-2] += 1
         os.remove("tmp.txt")
 # delete the tmp file
@@ -68,9 +77,14 @@ percentage_of_success = [0]*NB_NODES_TO_TEST
 for i in range (0, NB_NODES_TO_TEST):
     percentage_of_success[i] = has_succedded[i]/NB_TEST_PER_NODE
 
-plt.plot(range(2, NB_NODES_TO_TEST + 2), percentage_of_success)
+print(percentage_of_wrong_lines)
+for i in range (0, NB_NODES_TO_TEST):
+    percentage_of_wrong_lines[i]  = percentage_of_wrong_lines[i]/NB_TEST_PER_NODE
+print(percentage_of_wrong_lines)
+plt.plot(range(2, NB_NODES_TO_TEST + 2), percentage_of_wrong_lines)
+plt.xticks(range(2, NB_NODES_TO_TEST + 2), map(int, range(2, NB_NODES_TO_TEST + 2)))
 plt.xlabel("Number of nodes")
-plt.ylabel("Percentage of success")
-plt.title("Percentage of success for each number of nodes ("+  str(NB_TEST_PER_NODE) +" tests per node)")
+plt.ylabel("Percentage of lines with at least one error")
+plt.title("Percentage of lines with at least one error for each number of nodes ("+  str(NB_TEST_PER_NODE) +" tests per node)")
 plt.savefig('plot.png')
 plt.show()
