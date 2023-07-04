@@ -4,42 +4,52 @@ from fsm import FSM
 from state import State
 
 
-def buildExampleFsm() -> FSM :
-   fsm = FSM()
-   states=[State(0), State(1), State(2), State(3)]
-   for state in states :
-      fsm.addState(state)
-   fsm.addTransition(0, 1, "b", "0")
-   fsm.addTransition(0, 0, "a", "0")
-   fsm.addTransition(1, 2, "a", "0")
-   fsm.addTransition(1, 1, "b", "0")
-   fsm.addTransition(2, 3, "b", "0")
-   fsm.addTransition(2, 2, "a", "0")
-   fsm.addTransition(3, 0, "a", "1")
-   fsm.addTransition(3, 3, "b", "0")
+def generate_comparison(inputAlphabetInt):
+    input_variable = random.choice(inputAlphabetInt)
+    remaining_vars = [v for v in inputAlphabetInt if v != input_variable]
+    input_value = str(random.randint(0, 10)) if len(remaining_vars) == 0 or random.choice(['integer', 'variable']) == 'integer' else random.choice(remaining_vars)
+    operator = random.choice(['>', '<', '>=', '<='])
+    input = input_variable.strip() + operator.strip() + input_value.strip()
+    return input
 
-
-   return fsm
-
-def fsmRandomGenInputComplete(nbStates =2,inputAlphabet =['a','b','c'], outputAlphabet =[0,1,2]) -> FSM :
+def fsmRandomGenInputComplete(nbStates=2, inputAlphabet=['a', 'b', 'c'], outputAlphabet=[0, 1, 2]) -> FSM:
     fsm = FSM()
-    maxNbTransition = nbStates *  len(inputAlphabet)
-    stateIds = [i for i in range(0,nbStates)]
-    for i in stateIds :
-      fsm.addState(State(i))
-    fin = (fsm.nbTransitions()>=maxNbTransition) 
-    while not(fin) :
+    maxNbTransition = nbStates * len(inputAlphabet)
+    stateIds = [i for i in range(0, nbStates)]
+    for i in stateIds:
+        fsm.addState(State(i))
+
+    # Split the input alphabet into two halves.
+    inputAlphabetBool = inputAlphabet[:len(inputAlphabet) // 2]
+    inputAlphabetInt = inputAlphabet[len(inputAlphabet) // 2:]
+
+    # Generate transitions
+    fin = (fsm.nbTransitions() >= maxNbTransition)
+    while not(fin):
         idSrcState = random.choice(stateIds)
         idTgtState = random.choice(stateIds)
-        input = random.choice(inputAlphabet)
+        
+        # Choose randomly between a single comparison/boolean and a list.
+        choice = random.choice(['comparison', 'boolean', 'list'])
+        if choice == 'comparison':
+            input = generate_comparison(inputAlphabetInt)
+        elif choice == 'boolean':
+            input = random.choice(inputAlphabetBool)
+        elif choice == 'list':
+            nb_elements = random.randint(1, 5)  # Choose a random number of elements for the list
+            input = []
+            for _ in range(nb_elements):
+                if random.choice(['boolean', 'comparison']) == 'boolean':
+                    input.append(random.choice(inputAlphabetBool))
+                else:
+                    input.append(generate_comparison(inputAlphabetInt))
+
         if not (fsm.getState(idSrcState).defineTransitionOn(input)):
             output = random.choice(outputAlphabet)
             tr = fsm.addTransition(idSrcState,idTgtState,input,output)
             #print(tr.toDot()) 
         fin = (fsm.nbTransitions()>=maxNbTransition)  
-    return fsm  
-    
-
+    return fsm
 
 
 
@@ -48,11 +58,11 @@ if __name__ == '__main__' :
    #files = os.listdir(cwd)  # Get all the files in that directory
    #print("Files in %r: %s" % (cwd, files))
     #buildExampleFsm()
-   
+   alphabet = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']
    for k in range(1, 10):
       #nbState = random.randrange(6,15)
-      nbState = 3
-      fsm = fsmRandomGenInputComplete(nbState)
+      nbState = 5
+      fsm = fsmRandomGenInputComplete(nbState, alphabet)
       os.makedirs(f"./data/exemple{k}",exist_ok=True)
       f = open(f"./data/exemple{k}/fsm.dot", "w")
       f.write(fsm.toDot())

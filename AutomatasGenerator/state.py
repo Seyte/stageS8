@@ -1,12 +1,13 @@
 import random
 from transition import Transition
+
 class State :
    def __init__(self, label=None, id = -1, accepting=False):
       self._label = label
       self._id = -1
       self._accepting=accepting
-      self._outTr = {}
-      self._inTr = {}
+      self._outTr = [] # Changed to a list
+      self._inTr = []  # Changed to a list
 
    def setID(self, id) :
       self._id = id
@@ -21,19 +22,11 @@ class State :
       return self._accepting
    
    def addOutTr(self, transition:Transition) :
-      if not(transition.getInput() in self._outTr.keys()) :
-         self._outTr[transition.getInput()] = {}
-      if not(transition.getOutput() in self._outTr[transition.getInput()].keys()) :
-         self._outTr[transition.getInput()][transition.getOutput()] = []
-      self._outTr[transition.getInput()][transition.getOutput()].append(transition)
-   
+      self._outTr.append({"input": transition.getInput(), "output": transition.getOutput(), "transition": transition})
+
    def addInTr(self, transition:Transition) :
-      if not(transition.getInput() in self._inTr.keys()) :
-         self._inTr[transition.getInput()] = {}
-      if not(transition.getOutput() in self._inTr[transition.getInput()].keys()) :
-         self._inTr[transition.getInput()][transition.getOutput()] = []
-      self._inTr[transition.getInput()][transition.getOutput()].append(transition)
-   
+      self._inTr.append({"input": transition.getInput(), "output": transition.getOutput(), "transition": transition})
+
    def __str__(self) :
       if (self.isAccepting()) :
          return  f'c{self._label}[{self._id}]'
@@ -52,5 +45,4 @@ class State :
       return rst
    
    def defineTransitionOn(self, label):
-      return  label in self._outTr.keys()
-
+      return any(tr["input"] == label for tr in self._outTr)

@@ -1,13 +1,43 @@
 import random
+from pysmt.shortcuts import Symbol, Bool, Int, And, Or, Not, Implies, Iff, GT, LT, GE, LE
 
 
 class Transition :
-    def __init__(self, src, tgt, input=None, output=None, id=-1, ) -> None:
+    def __init__(self, src, tgt, input=None, output=None, id=-1) -> None:
         self._src = src 
         self._tgt = tgt 
-        self._input = input
+        self._input = self.parse_input(input)
         self._output = output
         self._id = id
+        
+    def parse_input(self, input):
+        if isinstance(input, list):
+            # Handles the list of strings case and constructs a conjunction
+            return And([self.parse_input(i) for i in input])
+        input = input.strip()
+        if ' ' in input:
+            x, op, y = input.split(' ')
+            if op == '>':
+                return GT(self.parse_input(x), self.parse_input(y))
+            elif op == '<':
+                return LT(self.parse_input(x), self.parse_input(y))
+            elif op == '>=':
+                return GE(self.parse_input(x), self.parse_input(y))
+            elif op == '<=':
+                return LE(self.parse_input(x), self.parse_input(y))
+            else:
+                raise ValueError(f"Unknown operator: {op}")
+        elif input.isdigit():
+            return Int(int(input)) 
+        elif isinstance(input, str):
+            return Symbol(input)
+        else:
+            raise ValueError(f"Unknown input: {input}")
+
+
+
+
+
     
     def setID(self, id) :
       self._id = id
@@ -28,7 +58,7 @@ class Transition :
     
     def toDot(self) -> str :
         rst = "\n\t" + f"s_{self._src.getID()} -> s_{self._tgt.getID()}"
-        rst+= f'[label="{self._input}/{self._output}"]'
+        rst += f'[label="{self._input}/{self._output}"]'
         return rst
     
     def toNL(self) -> str :

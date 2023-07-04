@@ -1,6 +1,5 @@
 from state import State
 from transition import Transition
-
 class FSM :
    def __init__(self, initState=None, data=None) :
       self._initial = initState
@@ -40,7 +39,8 @@ class FSM :
          id = self.nextTransitionId()
          self._transitionsById[id] = transition
          transition.setID(id)
-         self._inputSet.add(input)
+         self._inputSet.add(tuple(input))
+
          self._outputSet.add(output)
          return transition
       return None
