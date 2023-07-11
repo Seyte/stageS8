@@ -1,6 +1,6 @@
 import random
 from pysmt.shortcuts import Symbol, Bool, Int, And, Or, Not, Implies, Iff, GT, LT, GE, LE
-
+import state
 
 class Transition :
     def __init__(self, src, tgt, input=None, output=None, id=-1) -> None:
@@ -14,31 +14,32 @@ class Transition :
         if isinstance(input, list):
             # Handles the list of strings case and constructs a conjunction
             return And([self.parse_input(i) for i in input])
-        input = input.strip()
-        if ' ' in input:
-            x, op, y = input.split(' ')
-            if op == '>':
-                return GT(self.parse_input(x), self.parse_input(y))
-            elif op == '<':
-                return LT(self.parse_input(x), self.parse_input(y))
-            elif op == '>=':
-                return GE(self.parse_input(x), self.parse_input(y))
-            elif op == '<=':
-                return LE(self.parse_input(x), self.parse_input(y))
-            else:
-                raise ValueError(f"Unknown operator: {op}")
-        elif input.isdigit():
-            return Int(int(input)) 
         elif isinstance(input, str):
-            return Symbol(input)
+            if '&' in input:
+                # If input contains '&', split it and parse each condition separately
+                return And([self.parse_input(i) for i in input.split('&')])
+            input = input.strip()
+            if ' ' in input:
+                x, op, y = input.split(' ')
+                if op == '>':
+                    return GT(self.parse_input(x), self.parse_input(y))
+                elif op == '<':
+                    return LT(self.parse_input(x), self.parse_input(y))
+                elif op == '>=':
+                    return GE(self.parse_input(x), self.parse_input(y))
+                elif op == '<=':
+                    return LE(self.parse_input(x), self.parse_input(y))
+                else:
+                    raise ValueError(f"Unknown operator: {op}")
+            elif input.isdigit():
+                return Int(int(input))
+            else:
+                return Symbol(input)
         else:
             raise ValueError(f"Unknown input: {input}")
 
 
-
-
-
-    
+        
     def setID(self, id) :
       self._id = id
 
@@ -108,3 +109,8 @@ class Transition :
         return rst
     
 
+    def getSrcState(self):
+        return self._src
+
+    def getTgtState(self):
+        return self._tgt
