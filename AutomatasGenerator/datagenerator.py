@@ -33,16 +33,26 @@ def fsmRandomGenInputComplete(nbStates=2, inputAlphabet=['a', 'b', 'c'], outputA
         choice = random.choice(['comparison', 'boolean', 'list'])
         if choice == 'comparison':
             input = generate_comparison(inputAlphabetInt)
+            # Include negation one third of the time
+            if random.choices([True, False], [1, 2])[0]:
+                input = '!' + input
         elif choice == 'boolean':
             input = random.choice(inputAlphabetBool)
+            # Include negation one third of the time
+            if random.choices([True, False], [1, 2])[0]:
+                input = '!' + input
         elif choice == 'list':
             nb_elements = random.randint(1, 5)  # Choose a random number of elements for the list
             input = []
             for _ in range(nb_elements):
                 if random.choice(['boolean', 'comparison']) == 'boolean':
-                    input.append(random.choice(inputAlphabetBool))
+                    element = random.choice(inputAlphabetBool)
                 else:
-                    input.append(generate_comparison(inputAlphabetInt))
+                    element = generate_comparison(inputAlphabetInt)
+                # Include negation one third of the time
+                if random.choices([True, False], [1, 2])[0]:
+                    element = '!' + element
+                input.append(element)
 
         if not (fsm.getState(idSrcState).defineTransitionOn(input)):
             output = random.choice(outputAlphabet)

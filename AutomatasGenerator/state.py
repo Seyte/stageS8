@@ -46,3 +46,16 @@ class State :
    
    def defineTransitionOn(self, label):
       return any(tr["input"] == label for tr in self._outTr)
+
+   def removeOutTr(self, transition:Transition):
+      self._outTr = [tr for tr in self._outTr if tr["transition"] != transition]
+
+   def removeInTr(self, transition:Transition):
+      self._inTr = [tr for tr in self._inTr if tr["transition"] != transition]
+
+
+   def getOutTransitions(self):
+       return [tr["transition"] for tr in self._outTr]
+
+   def getInTransitions(self):
+       return [tr["transition"] for tr in self._inTr]

@@ -3,13 +3,15 @@ from transition import Transition
 import pygraphviz as pgv
 import filecomparator
 from pysmt.shortcuts import Symbol, Bool, Int, And, Or, Not, Implies, Iff, GT, LT, GE, LE
+from pysmt.shortcuts import simplify
+from pysmt.fnode import FNode
+
 
 class FSM :
    def __init__(self, initState=None, data=None) :
       self._initial = initState
       self._states = []
       self._statesById = dict() 
-      self._inputSet =set()
       self._outputSet =set()
       self._transitionsById =dict()
 
@@ -51,11 +53,21 @@ class FSM :
          id = self.nextTransitionId()
          self._transitionsById[id] = transition
          transition.setID(id)
-         self._inputSet.add(tuple(input))
 
          self._outputSet.add(output)
          return transition
       return None
+   def removeTransition(self, transition):
+      # Remove the transition from source state's outgoing transitions
+      transition.getSrcState().removeOutTr(transition)
+      # Remove the transition from target state's incoming transitions
+      transition.getTgtState().removeInTr(transition)
+      # Remove the transition from FSM's transitions
+      del self._transitionsById[transition.getID()]
+      # If the transition's output is no longer produced by any other transition,
+      # remove it from the outputSet
+      if not any(t.getOutput() == transition.getOutput() for t in self.getTransitions()):
+         self._outputSet.remove(transition.getOutput())
 
    def nbTransitions(self):
       return len(self._transitionsById.keys())
@@ -108,45 +120,84 @@ def fromDot(filePath):
 
     return fsm
 
+def simplify_fsm(fsm):
+    def is_subsumed(cond1, cond2):
+        return set(cond1.split(' & ')).issubset(set(cond2.split(' & ')))
+
+    for state in fsm.getStates():
+        out_transitions = state.getOutTransitions()
+        for transition in out_transitions[:]:
+            for other_transition in out_transitions:
+                if transition != other_transition and transition.getTgtState() == other_transition.getTgtState():
+                    if is_subsumed(transition.getInput(), other_transition.getInput()):
+                        fsm.removeTransition(transition)
+                        break
+
+
+def simplify_fsm(fsm):
+    def is_subsumed(cond1, cond2):
+      cond1 = cond1.replace("(", "").replace(")", "").replace("\'", "").replace("\"", "").replace(" ", "")
+      cond2 = cond2.replace("(", "").replace(")", "").replace("\'", "").replace("\"", "").replace(" ", "")
+      return set(cond1.split('&')).issubset(set(cond2.split('&')))
+
+    for state in fsm.getStates():
+        out_transitions = state.getOutTransitions()
+        for transition in out_transitions[:]:
+            for other_transition in out_transitions:
+                if transition != other_transition and transition.getTgtState() == other_transition.getTgtState():
+                    if is_subsumed(str(transition.getInput()), str(other_transition.getInput())):
+                        fsm.removeTransition(transition)
+                        break
+
+
 def multiply_fsm(fsm1, fsm2):
     new_fsm = FSM()
     state_dict = {}
+    sink_state = State("sink")
+    new_fsm.addState(sink_state)
 
     for state1 in fsm1.getStates():
         for state2 in fsm2.getStates():
             new_label = state1.getLabel() + "-" + state2.getLabel()
             new_state = State(new_label)
             new_fsm.addState(new_state)
-            state_dict[new_label] = new_state
-            
+            state_dict[(state1.getID(), state2.getID())] = new_state
+
     for transition1 in fsm1.getTransitions():
         for transition2 in fsm2.getTransitions():
-            src_label = transition1.getSrcState().getLabel() + "-" + transition2.getSrcState().getLabel()
-            tgt_label = transition1.getTgtState().getLabel() + "-" + transition2.getTgtState().getLabel()
-
-            # Retrieve the new states from the state_dict
-            src_state = state_dict[src_label]
-            tgt_state = state_dict[tgt_label]
-            input = str(transition1.getInput())
-            input = input.replace("('", "")
-            input = input.replace("')", "")
-            input = input.replace("'","")
-            print("source=",src_state.getID())
-            print("target=",tgt_state.getID())
-            print("input=",input)
-            print("output=",transition1.getOutput())
-            new_fsm.addTransition(src_state.getID(), tgt_state.getID(),input,str(transition1.getOutput()))
-
+            intersection = And(transition1.getInput(), transition2.getInput())
+            simplified_intersection = simplify(intersection)
+            str_intersection = str(simplified_intersection).strip("() '\"")
+            unique_conditions = ' & '.join(set(str_intersection.split(' & ')))
+            if transition1.getOutput() == transition2.getOutput():
+                if not simplified_intersection.is_false():
+                    src_state = state_dict[(transition1.getSrcState().getID(), transition2.getSrcState().getID())]
+                    tgt_state = state_dict[(transition1.getTgtState().getID(), transition2.getTgtState().getID())]
+                    new_fsm.addTransition(src_state.getID(), tgt_state.getID(), unique_conditions, transition1.getOutput())
+            else:
+                if not simplified_intersection.is_false():
+                    src_state = state_dict[(transition1.getSrcState().getID(), transition2.getSrcState().getID())]
+                    new_fsm.addTransition(src_state.getID(), sink_state.getID(), unique_conditions, transition1.getOutput())
+    simplify_fsm(new_fsm)
     return new_fsm
 
-
+def encode_deterministic_fsm(fsm):
+   return "TODO"
 
 
 if __name__ == '__main__':
-   fsm1 = fromDot("./data/exemple1/fsm.dot")
-   fsm2 = fromDot("./data/exemple2/fsm.dot")
+    fsm = fromDot("./first_snippets/data/fsm4.dot")
+    print(encode_deterministic_fsm(fsm))
+
+
+'''
+if __name__ == '__main__':
+   fsm1 = fromDot("./first_snippets/data/fsm1.dot")
+   fsm2 = fromDot("./first_snippets/data/fsm2.dot")
    new_fsm = multiply_fsm(fsm1, fsm2)
    print(new_fsm.toDot())
+   print(encode_deterministic_fsm(new_fsm))
+'''
 '''
 # test for fromDot and toDot
 if __name__ == '__main__' :

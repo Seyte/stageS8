@@ -1,43 +1,88 @@
 import random
-from pysmt.shortcuts import Symbol, Bool, Int, And, Or, Not, Implies, Iff, GT, LT, GE, LE
+from pysmt.shortcuts import Symbol, And, Not, GT, LT, GE, LE, Int, BOOL, INT
 import state
+from pysmt.shortcuts import Symbol, And, get_free_variables
 
+        
 class Transition :
     def __init__(self, src, tgt, input=None, output=None, id=-1) -> None:
         self._src = src 
         self._tgt = tgt 
+        self._symbol_list = []
         self._input = self.parse_input(input)
         self._output = output
         self._id = id
-        
+
     def parse_input(self, input):
-        if isinstance(input, list):
-            # Handles the list of strings case and constructs a conjunction
-            return And([self.parse_input(i) for i in input])
-        elif isinstance(input, str):
+        def clean_symbol(symbol):
+            symbol = symbol.strip()  # remove leading and trailing spaces
+            symbol = symbol.replace('\'', '')  # remove single quotes
+            symbol = symbol.replace('(', '')  # remove left parentheses
+            symbol = symbol.replace(')', '')  # remove right parentheses
+            symbol = symbol.replace('=', '')  # remove equal sign
+            symbol = symbol.replace(' ', '')  # remove spaces
+            return symbol
+        
+        def parse_condition(input):
+            input = input.strip()
+            # Check for negation at the start of the string
+            if input.startswith('!'):
+                return Not(parse(input[1:]))
             if '&' in input:
                 # If input contains '&', split it and parse each condition separately
-                return And([self.parse_input(i) for i in input.split('&')])
-            input = input.strip()
-            if ' ' in input:
-                x, op, y = input.split(' ')
-                if op == '>':
-                    return GT(self.parse_input(x), self.parse_input(y))
-                elif op == '<':
-                    return LT(self.parse_input(x), self.parse_input(y))
-                elif op == '>=':
-                    return GE(self.parse_input(x), self.parse_input(y))
-                elif op == '<=':
-                    return LE(self.parse_input(x), self.parse_input(y))
-                else:
-                    raise ValueError(f"Unknown operator: {op}")
-            elif input.isdigit():
-                return Int(int(input))
+                return And([parse(i) for i in input.split('&')])
+            # The input is a single symbol (boolean)
             else:
-                return Symbol(input)
-        else:
-            raise ValueError(f"Unknown input: {input}")
+                return Symbol(clean_symbol(input), BOOL)
+        
+        def parse_inequality(input):
+            operators = ['>=', '<=', '>', '<']
+            op = next((x for x in operators if x in input), None)
+            if op is not None:
+                x, y = map(str.strip, input.split(op))
+                if x.isdigit():
+                    x = Int(int(x))
+                else:
+                    x = Symbol(clean_symbol(x), INT)
+                
+                if y.isdigit():
+                    y = Int(int(y))
+                else:
+                    y = Symbol(clean_symbol(y), INT)
+                
+                if op == '>':
+                    return GT(x, y)
+                elif op == '<':
+                    return LT(x, y)
+                elif op == '>=':
+                    return GE(x, y)
+                elif op == '<=':
+                    return LE(x, y)
+            else:
+                raise ValueError(f"Unknown operator in: {input}")
 
+        def parse(input):
+            if isinstance(input, list):
+                # Handles the list of strings case and constructs a conjunction
+                return And([parse(i) for i in input])
+            elif isinstance(input, str):
+                if any(op in input for op in ['!', '&', '|']):
+                    return parse_condition(input)
+                if any(op in input for op in ['>', '<', '>=', '<=']):
+                    return parse_inequality(input)
+                elif input.isdigit():
+                    return Int(int(input))
+                else:
+                    return Symbol(clean_symbol(input))
+            else:
+                raise ValueError(f"Unknown input: {input}")
+
+        return parse(input)
+
+    def print_symbol_types(self):
+        free_vars = get_free_variables(self._input)
+        for var in free_vars:
+            print(f"Symbol: {var}, Type: {var.get_type()}")
 
         
     def setID(self, id) :
