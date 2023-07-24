@@ -6,9 +6,9 @@ class State :
       self._label = label
       self._id = -1
       self._accepting=accepting
-      self._outTr = [] # Changed to a list
-      self._inTr = []  # Changed to a list
-
+      self._outTr = [] 
+      self._inTr = []  
+      
    def setID(self, id) :
       self._id = id
 

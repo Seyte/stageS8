@@ -181,13 +181,59 @@ def multiply_fsm(fsm1, fsm2):
     simplify_fsm(new_fsm)
     return new_fsm
 
+
+
+from collections import defaultdict
+from collections import defaultdict
+
+from collections import defaultdict
+
+def encode_xi_T(state):
+    # Group transitions by their input
+    transitions_by_input = defaultdict(list)
+    for transition in state.getOutTransitions():
+        transitions_by_input[transition.getInput()].append(transition)
+
+    cnf_formulas = []
+
+    for input_value, input_transitions in transitions_by_input.items():
+        n = len(input_transitions)
+
+        terms = []
+        for k in range(0, n-1):
+            t_k = input_transitions[k]
+
+            for j in range(k+1, n):
+                t_j = input_transitions[j]
+
+                # Construct (¬tk∨ ¬tj) for each pair
+                terms.append(Or(Not(Symbol(f't_{t_k.getID()}')), Not(Symbol(f't_{t_j.getID()}'))))
+
+        # Create a CNF formula for this input
+        if terms:
+            # We should flatly add symbols and terms into And function
+            cnf_formula = And(Or(*(Symbol(f't_{t_k.getID()}') for t_k in input_transitions)), *terms)
+        else:
+            cnf_formula = And(*(Symbol(f't_{t_k.getID()}') for t_k in input_transitions))
+        cnf_formulas.append(cnf_formula)
+        
+        # Print the state, input and the generated condition
+        print(f"encode_xi_T of state {state.getLabel()} with input {input_value} gives the conditions {cnf_formula}")
+
+    # Create a conjunction of all CNF formulas
+    xi_T = And(*cnf_formulas)
+    return xi_T
+
 def encode_deterministic_fsm(fsm):
-   return "TODO"
+    states = fsm.getStates()
+    phi_M = And(*[encode_xi_T(state) for state in states])
+    return phi_M
+
 
 
 if __name__ == '__main__':
     fsm = fromDot("./first_snippets/data/fsm4.dot")
-    print(encode_deterministic_fsm(fsm))
+    print("encode_deterministic_fsm returns",encode_deterministic_fsm(fsm))
 
 
 '''
