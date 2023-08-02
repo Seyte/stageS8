@@ -2,9 +2,9 @@ from state import State
 from transition import Transition
 import pygraphviz as pgv
 import filecomparator
-from pysmt.shortcuts import Symbol, Bool, Int, And, Or, Not, Implies, Iff, GT, LT, GE, LE
-from pysmt.shortcuts import simplify
+from pysmt.shortcuts import Symbol, Bool, Int, And, Or, Not, Implies, Iff, GT, LT, GE, LE, simplify, Solver, get_model, is_sat, is_unsat
 from pysmt.fnode import FNode
+from collections import defaultdict, deque
 
 
 class FSM :
@@ -92,6 +92,38 @@ class FSM :
          rst +=  " "+self._transitionsById[cle].toNL() + ".\n"
       return rst 
 
+   def deterministic_executions(self, input_symbols):
+        # Start with the initial state, the given sequence of input symbols, and an empty list of previous outputs
+        queue = deque([(self._initial, input_symbols, [])])
+        final_outputs = set()
+
+        while queue:
+            current_state, remaining_inputs, previous_outputs = queue.popleft()
+
+            if not remaining_inputs:  # No more input symbols, so collect the output
+                final_outputs.add(tuple(previous_outputs))  # Store the sequence of outputs
+            else:
+                current_input = remaining_inputs[0]  # Take the first input symbol
+                next_inputs = remaining_inputs[1:]   # Remaining input symbols
+
+                # Find the transitions corresponding to the current input symbol
+                matching_transitions = [t for t in current_state.getOutTransitions() if is_sat(And(t.getInput(), current_input))]
+
+                for transition in matching_transitions:
+                    next_state = transition.getTgtState()
+                    next_outputs = previous_outputs + [transition.getOutput()]  # Concatenate the current output with previous ones
+                    queue.append((next_state, next_inputs, next_outputs))  # Continue exploring with the next state and remaining inputs
+
+        return final_outputs
+
+
+
+
+
+
+''' --------------------------------- FromDot ---------------------------------  '''
+
+
 def fromDot(filePath):
     # Load the .dot file and create a graph from it
     graph = pgv.AGraph(filePath)
@@ -120,19 +152,7 @@ def fromDot(filePath):
 
     return fsm
 
-def simplify_fsm(fsm):
-    def is_subsumed(cond1, cond2):
-        return set(cond1.split(' & ')).issubset(set(cond2.split(' & ')))
-
-    for state in fsm.getStates():
-        out_transitions = state.getOutTransitions()
-        for transition in out_transitions[:]:
-            for other_transition in out_transitions:
-                if transition != other_transition and transition.getTgtState() == other_transition.getTgtState():
-                    if is_subsumed(transition.getInput(), other_transition.getInput()):
-                        fsm.removeTransition(transition)
-                        break
-
+''' --------------------------------- multiply_fsm ---------------------------------  '''
 
 def simplify_fsm(fsm):
     def is_subsumed(cond1, cond2):
@@ -181,15 +201,9 @@ def multiply_fsm(fsm1, fsm2):
     simplify_fsm(new_fsm)
     return new_fsm
 
-
-
-from collections import defaultdict
-from collections import defaultdict
-
-from collections import defaultdict
+''' --------------------------------- encodage en pySMT ---------------------------------  '''
 
 def encode_xi_T(state):
-    # Group transitions by their input
     transitions_by_input = defaultdict(list)
     for transition in state.getOutTransitions():
         transitions_by_input[transition.getInput()].append(transition)
@@ -206,19 +220,18 @@ def encode_xi_T(state):
             for j in range(k+1, n):
                 t_j = input_transitions[j]
 
-                # Construct (¬tk∨ ¬tj) for each pair
+                # (¬tk∨ ¬tj) 
                 terms.append(Or(Not(Symbol(f't_{t_k.getID()}')), Not(Symbol(f't_{t_j.getID()}'))))
 
-        # Create a CNF formula for this input
+        # create a CNF formula for this input
         if terms:
-            # We should flatly add symbols and terms into And function
             cnf_formula = And(Or(*(Symbol(f't_{t_k.getID()}') for t_k in input_transitions)), *terms)
         else:
             cnf_formula = And(*(Symbol(f't_{t_k.getID()}') for t_k in input_transitions))
         cnf_formulas.append(cnf_formula)
         
-        # Print the state, input and the generated condition
-        print(f"encode_xi_T of state {state.getLabel()} with input {input_value} gives the conditions {cnf_formula}")
+        # (Debug) print the state, input and the generated condition
+        #print(f"encode_xi_T of state {state.getLabel()} with input {input_value} gives the conditions {cnf_formula}")
 
     # Create a conjunction of all CNF formulas
     xi_T = And(*cnf_formulas)
@@ -230,36 +243,79 @@ def encode_deterministic_fsm(fsm):
     return phi_M
 
 
+''' --------------------------------- Algo de selection des transitions pour rendre l'automate deterministe ---------------------------------  '''
+
+# recupere tous les modèles (toutes les combinaisons de transitions) qui satisfont la formule (automate non deterministe)
+def get_all_models(formula):
+    solver = Solver()
+    solver.add_assertion(formula)
+    
+    models = []
+    while solver.solve():
+        model = solver.get_model()
+        models.append(model)
+        
+        blocking_clause = Not(And([Or(k, Not(v)) if v.is_true() else Or(Not(k), v)
+                                   for k, v in model]))
+        solver.add_assertion(blocking_clause)
+    
+    return models
+
+# are two fsm pysmt description equivalent?
+def are_equivalent(phi_M1, phi_M2):
+    equivalence_formula = And(phi_M1, phi_M2)
+    
+    # Use a solver to check if the formula is satisfiable
+    with Solver() as solver:
+        solver.add_assertion(equivalence_formula)
+        return solver.solve()
+
+def verify_test_adequacy_for_mining(M, phiM, TS, S):
+    def at_least_two_non_equivalent_DFSMs(phi):
+        # Énumérez toutes les solutions de l'encodage booléen phi
+        solutions = get_all_models(phi)
+        
+        # Si le nombre de solutions est inférieur à 2, alors phi ne sélectionne pas au moins deux DFSMs non équivalents
+        if len(solutions) < 2:
+            return False
+
+        # Sinon, vérifiez si au moins deux des solutions sont non équivalentes
+        for i in range(len(solutions)):
+            for j in range(i + 1, len(solutions)):
+                if not are_equivalent(solutions[i], solutions[j]):
+                    return True
+        return False
+
+    def encode_DFSMs_in_M_producing_y_on_test_x(Exy, y):
+        # Cette fonction devrait retourner l'encodage boolean des DFSMs dans M qui produisent y sur le test x
+        pass
+
+    def minimal_distinguishing_test_for_two_non_equivalent_DFSMs():
+        # Cette fonction devrait retourner un test minimal qui distingue deux DFSM non équivalents
+        pass
+
+    phi = phiM
+    verdict = True if not at_least_two_non_equivalent_DFSMs(phi) else False
+    while TS and not verdict:
+        x = TS.pop()  # Sélectionne et supprime un test de TS
+        # on execute l'automate M sur le test x
+        YMx = M.deterministic_executions(x)  # Remplacez ceci par l'appel de fonction réel
+        # on simule l'automate S sur le test x
+        y = S.emulate(x)  # Remplacez ceci par l'appel de fonction réel
+        Exy = M.deterministic_executions_producing_y_on_test_x(y, x)  # Remplacez ceci par l'appel de fonction réel
+        phi = And(phi, encode_DFSMs_in_M_producing_y_on_test_x(Exy, y))  # Remplacez ceci par l'appel de fonction réel
+        M = Mx_y  # Vous avez besoin d'une fonction pour déterminer Mx/y
+        if at_least_two_non_equivalent_DFSMs(phi):
+            xd = minimal_distinguishing_test_for_two_non_equivalent_DFSMs()  # Remplacez ceci par l'appel de fonction réel
+        else:
+            verdict = True
+    return verdict, M, phi, xd
+
+
 
 if __name__ == '__main__':
     fsm = fromDot("./first_snippets/data/fsm4.dot")
-    print("encode_deterministic_fsm returns",encode_deterministic_fsm(fsm))
-
-
-'''
-if __name__ == '__main__':
-   fsm1 = fromDot("./first_snippets/data/fsm1.dot")
-   fsm2 = fromDot("./first_snippets/data/fsm2.dot")
-   new_fsm = multiply_fsm(fsm1, fsm2)
-   print(new_fsm.toDot())
-   print(encode_deterministic_fsm(new_fsm))
-'''
-'''
-# test for fromDot and toDot
-if __name__ == '__main__' :
-   # gen fsm from ./data/exemple1/fsm.dot
-   fsm = fromDot("./data/exemple1/fsm.dot")
-   # save fsm in tmp.dot
-   dot_content = fsm.toDot()
-   dot_content = dot_content.replace("('", "")
-   dot_content = dot_content.replace("')", "")
-   dot_content = dot_content.replace("'","")
-
-   with open("./tmp.dot", "w") as f:
-      f.write(dot_content)
-
-
-   # compare tmp.dot and ./data/exemple1/fsm.dot
-   print(filecomparator.compare_files("./tmp.dot", "./data/exemple1/fsm.dot"))
-
-'''
+    encoding = encode_deterministic_fsm(fsm)
+    print("encode_deterministic_fsm returns",encoding)
+    models = get_all_models(encoding)
+    print ("get_all_models returns", models)
