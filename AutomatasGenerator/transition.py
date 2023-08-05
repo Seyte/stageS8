@@ -94,6 +94,9 @@ class Transition :
     def getInput(self) :
        return self._input
     
+    def getTransitionSymbol(self) :
+         return Symbol(f"t_{self.getID()}", BOOL)
+    
     def getOutput(self) :
        return self._output
     
