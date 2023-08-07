@@ -119,6 +119,65 @@ class FSM :
 
 
 
+''' --------------------------------- Algorithme de Moore ---------------------------------  '''
+
+def partition_states_by_output(fsm):
+    # Assuming a state is "accepting" if it has a unique output. Modify as needed.
+    partitions = defaultdict(set)
+    for state in fsm.getStates():
+        for tr in state.getOutTransitions():
+            partitions[tr.getOutput()].add(state)
+            break  # Assuming each state has one unique output through its transitions
+    return list(partitions.values())
+
+def refine_partitions(fsm, partitions, alphabet):
+    # For each partition and each symbol, check if states need further splitting
+    new_partitions = []
+    for partition in partitions:
+        split_dict = defaultdict(set)
+
+        for state in partition:
+            key = []
+            for symbol in alphabet:
+                matching_transitions = [t for t in state.getOutTransitions() if t.getTransitionSymbol() == symbol]
+                if matching_transitions:
+                    destination = matching_transitions[0].getTgtState()
+                    for p in partitions:
+                        if destination in p:
+                            key.append(tuple(p))
+                            break
+                else:
+                    key.append(None)
+            split_dict[tuple(key)].add(state)
+
+        new_partitions.extend(split_dict.values())
+
+    return new_partitions
+
+def moore_minimization(fsm, alphabet):
+    partitions = partition_states_by_output(fsm)
+
+    while True:
+        new_partitions = refine_partitions(fsm, partitions, alphabet)
+        if new_partitions == partitions:  # No further refinement possible
+            break
+        partitions = new_partitions
+
+    # Construct new FSM from partitions
+    minimized_fsm = FSM()
+
+    state_mapping = {}
+    for partition in partitions:
+        new_state = minimized_fsm.addState(State())  # Assuming State class exists
+        for state in partition:
+            state_mapping[state] = new_state
+
+    for transition in fsm.getTransitions():
+        src_state = state_mapping[transition.getSrcState()]
+        tgt_state = state_mapping[transition.getTgtState()]
+        minimized_fsm.addTransition(src_state.getID(), tgt_state.getID(), transition.getTransitionSymbol(), transition.getOutput())
+
+    return minimized_fsm
 
 
 ''' --------------------------------- FromDot ---------------------------------  '''
@@ -209,27 +268,22 @@ def encode_xi_T(state):
         transitions_by_input[transition.getInput()].append(transition)
 
     cnf_formulas = []
-
     for input_value, input_transitions in transitions_by_input.items():
         n = len(input_transitions)
-
         terms = []
         for k in range(0, n-1):
             t_k = input_transitions[k]
-
             for j in range(k+1, n):
                 t_j = input_transitions[j]
 
                 # (¬tk∨ ¬tj) 
                 terms.append(Or(Not(t_k.getTransitionSymbol()), Not(t_j.getTransitionSymbol())))
-
         # create a CNF formula for this input
         if terms:
             cnf_formula = And(Or(*(t_k.getTransitionSymbol() for t_k in input_transitions)), *terms)
         else:
             cnf_formula = And(*(t_k.getTransitionSymbol() for t_k in input_transitions))
         cnf_formulas.append(cnf_formula)
-        
         # (Debug) print the state, input and the generated condition
         #print(f"encode_xi_T of state {state.getLabel()} with input {input_value} gives the conditions {cnf_formula}")
 
@@ -245,7 +299,7 @@ def encode_deterministic_fsm(fsm):
 
 ''' --------------------------------- Algo de selection des transitions pour rendre l'automate deterministe ---------------------------------  '''
 
-# recupere tous les modèles (toutes les combinaisons de transitions) qui satisfont la formule (automate non deterministe)
+# recupere tous les modèles (toutes les combinaisons de transitions) qui satisfont la formule (description de l'automate non deterministe)
 def get_all_models(formula):
     solver = Solver()
     solver.add_assertion(formula)
@@ -262,7 +316,7 @@ def get_all_models(formula):
     return models
 
 # find_paths_to_initial permets de trouver un chemin entre l'état en paramètre et l'état initial
-def find_paths_to_initial(state, M):
+def find_paths_from_initial(state, M): 
     paths = []
     initial_state = M.getInitialState()
     stack = [(state, [])]
@@ -284,17 +338,18 @@ def find_paths_to_initial(state, M):
 
 # are two fsm pysmt description equivalent?
 def are_equivalent(phi_M1, phi_M2):
-    equivalence_formula = Iff(phi_M1, phi_M2)
-    
-    # Use a solver to check if the formula is satisfiable
-    with Solver() as solver:
-        solver.add_assertion(equivalence_formula)
-        return solver.solve()
+    # too fsms are equivalent if when we multiply them, there is no delta state (sink state)
+    pass
     
 def delete_transitions (fsm, transitions_to_delete):
     for transition in transitions_to_delete:
         fsm.removeTransition(transition)
 
+
+# find a minimal distinguishing test for two non equivalent DFSMs
+def minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M,phi):
+    pass
+    
 def verify_test_adequacy_for_mining(M, phiM, TS, S):
 
     def at_least_two_non_equivalent_DFSMs(phi):
@@ -347,47 +402,11 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
         Mx_y = delete_transitions(M, invalid_transitions)
 
         return Mx_y
-    
-    #TODO: la complexité de cette méthode est probablement très mauvaise, à discuter avec omer.
-    def minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M,phi):
-        # This method will admit that every STM has received a pre treatment
-        # This pre treatment is to remove all ambiguous transitions from a same state
-        # 1 - create a set with all the conditions of all the transitions of all the states
-        conditions = set()
-        for state in M.getStates():
-            for transition in state.getTransitions():
-                conditions.add(transition.getInput())
-        # 2 - create an observation table with rows that represent each state and columns that represent each condition
-        # the value of each cell is the a tuple containing target state of the transition and its output
-        observation_table = dict()
-        for state in M.getStates():
-            observation_table[state] = dict()
-            for condition in state.getTransitions():
-                observation_table[state][condition.getInput()] = (condition.getTgtState(), condition.getOutput())
-        # 3 - find non deterministic states
-        non_deterministic_states = set()
-        for state, transitions in observation_table.items():
-            transition_conditions = dict()
-            for condition, target in transitions.items():
-                if condition in transition_conditions:
-                    non_deterministic_states.add(state)
-                    break
-                transition_conditions[condition] = target
 
-        # 4 - trace back paths to the initial state
-        minimal_distinguishing_tests = []
-        for state in non_deterministic_states:
-            paths_to_initial = find_paths_to_initial(state, M) # Assuming this method is defined elsewhere
-            minimal_distinguishing_tests.extend(paths_to_initial)
-
-        # 5 - return the shortest sequence that leads to non-deterministic behavior
-        if minimal_distinguishing_tests:
-            return min(minimal_distinguishing_tests, key=len)
-        else:
-            return None
 
     phi = phiM
     verdict = True if not at_least_two_non_equivalent_DFSMs(phi) else False
+    xd = None
     while TS and not verdict:
         x = TS.pop()  # Sélectionne et supprime un test de TS
         # on execute l'automate M sur le test x
@@ -404,19 +423,30 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
             verdict = True
     return verdict, M, phi, xd
 
-'''
-if __name__ == '__main__':
-    fsm = fromDot("./first_snippets/data/fsm4.dot")
-    encoding = encode_deterministic_fsm(fsm)
-    print("encode_deterministic_fsm returns",encoding)
-    models = get_all_models(encoding)
-    print ("get_all_models returns", models)
-'''
+''' ------------------------- mining oracle ------------------------- '''
+def precise_oracle_mining(M, TS, S):
+    phiM = encode_deterministic_fsm(M)
+    TSm = TS.copy()
+    verdict, M_prime, phi_prime, xd = verify_test_adequacy_for_mining(M, phiM, TS, S)
+    while verdict == False:
+        TSm.append(xd)
+        phiM = phi_prime
+        M = M_prime
+        verdict, M_prime, phi_prime, xd = verify_test_adequacy_for_mining(M, phiM, TS, S)
+
+    # TODO: extraire la solution de phi_prime (pour l'instant je vérifie manuellement)
+    P = phi_prime
+
+    return TSm, P
+
+
 if __name__ == '__main__':
     fsm = fromDot("./first_snippets/data/fsm5.dot")
     #result = fsm.deterministic_executions([Symbol('a'),Symbol('b')])
     #print(result)
-    stateToReach = fsm.getStates()[1]
-    print(find_paths_to_initial(stateToReach, fsm))
+    #stateToReach = fsm.getStates()[1]
+    #print(find_paths_to_initial(stateToReach, fsm))
+
+
     
     
