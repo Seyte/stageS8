@@ -109,7 +109,7 @@ class Transition :
     
     def toDot(self) -> str :
         rst = "\n\t" + f"s_{self._src.getID()} -> s_{self._tgt.getID()}"
-        rst += f'[label="{self._input}/{self._output}"]'
+        rst += f'[label="{self._input}/{self._output}", myattribute= "t_{self.getID()}"]'
         return rst
     
     def toNL(self) -> str :

@@ -173,32 +173,10 @@ def multiply_fsm(fsm1, fsm2):
 
     for transition1 in fsm1.getTransitions():
         for transition2 in fsm2.getTransitions():
-            print("---------------------------")
-            print("Transition 1 input : ", transition1.getInput())
-            print("Transition 2 input : ", transition2.getInput())
             intersection = And(transition1.getInput(), transition2.getInput())
-            print("Intersection : ", intersection)
             simplified_intersection = simplify(intersection)
-            
-             # Get individual symbols from the transition inputs
-            symbols_t1 = get_free_variables(transition1.getInput())
-            symbols_t2 = get_free_variables(transition2.getInput())
-
-            # Print the type of each symbol
-            for sym in symbols_t1:
-                print("Type of symbol ",sym," in transition1 input:", sym.get_type())
-            for sym in symbols_t2:
-                print("Type of symbol ",sym," in transition2 input:", sym.get_type())
-
-            print(get_model(simplified_intersection))
-            print("is it satisfaible: ",not simplified_intersection.is_false())
     
             src_state = state_dict[(transition1.getSrcState().getID(), transition2.getSrcState().getID())]
-            if(transition1.getSrcState().getLabel() == "A" and transition2.getSrcState().getLabel() == "A"):
-                tgt_state = state_dict[(transition1.getTgtState().getID(), transition2.getTgtState().getID())]
-                print("tgt_state : ", tgt_state.getLabel())
-                print("is solvable :", not simplified_intersection.is_false())
-                print("source state label", src_state.getLabel())
             # si les transitions ont la même sortie et que l'input est solvable
             if transition1.getOutput() == transition2.getOutput() and not simplified_intersection.is_false():
                 tgt_state = state_dict[(transition1.getTgtState().getID(), transition2.getTgtState().getID())]
@@ -206,14 +184,11 @@ def multiply_fsm(fsm1, fsm2):
             else:
                 # sinon cela veut dire que input1 ou input2 provoque une sortie différente -> sink
                 # on rajoute deux transitions avec input1 et input2
-                print(" Creation of transition to sink")
-                print("from ", src_state.getLabel(), " to ", sink_state.getLabel(), " with input ", str(transition1.getInput()), " and output ", transition1.getOutput())
                 new_fsm.addTransition(src_state.getID(), sink_state.getID(), str(transition1.getInput()), transition1.getOutput())
                 new_fsm.addTransition(src_state.getID(), sink_state.getID(), str(transition2.getInput()), transition2.getOutput())
-                print("from ", src_state.getLabel(), " to ", sink_state.getLabel(), " with input ", str(transition2.getInput()), " and output ", transition2.getOutput())
+                
     # set initial state 
     new_fsm.setInitialState(state_dict[(fsm1.getInitialState().getID(), fsm2.getInitialState().getID())])
-    print("label of initial state ", new_fsm.getInitialState().getLabel())
     return new_fsm
 
 ''' --------------------------------- encodage en pySMT ---------------------------------  '''
@@ -318,13 +293,7 @@ def are_equivalent(M, phi_M1, phi_M2):
     # we use phi1 and phi2 using solvers to know which transitions are used in the two fsms
     # we shall use create_automata_from_phi and multiply_fsm.
     M1 = create_automata_from_phi(M, phi_M1)
-    print("===============================")
-    print("M1")
-    print(M1.toDot())
     M2 = create_automata_from_phi(M, phi_M2)
-    print("===============================")
-    print("M2")
-    print(M2.toDot())
     M1_M2 = multiply_fsm(M1, M2)
     sink_M1_M2 = M1_M2.getSinkState()
     paths_to_sink = find_paths_from_initial(sink_M1_M2, M1_M2)
@@ -430,35 +399,30 @@ def precise_oracle_mining(M, TS, S):
 
 if __name__ == '__main__':
     fsm = fromDot("./first_snippets/data/fsm6.dot")
-    #phi = And(Symbol('t_1'), Not(Symbol('t_2')), Not(Symbol('t_3')), Symbol('t_0'))
-
-    #M = create_automata_from_phi(fsm,phi)
-    print(fsm.toDot())
-    #print(M.toDot())   
-    # for each transition, print the id, the source state, the destination state, the label
-    for transition in fsm.getTransitions():
-        # print "Inputstate -> output state" for each transitions
-        print(transition.getID(), transition.getSrcState().getLabel(), transition.getTgtState().getLabel(), transition.getInput())
-    # phi toutes transitions actives 5 transitions 0->4
-    # 3 et 4 osef
-    # 
     #phi1 & phi2 non & équivalent
     phi1 = And(Not(Symbol('t_0',BOOL)), Symbol('t_1',BOOL), Symbol('t_2',BOOL), Symbol('t_3',BOOL), Symbol('t_4',BOOL))
     phi2 = And(Symbol('t_0',BOOL), Not(Symbol('t_1',BOOL)), Symbol('t_2',BOOL), Symbol('t_3',BOOL), Symbol('t_4',BOOL))
     M1 = create_automata_from_phi(fsm,phi1)
     M2 = create_automata_from_phi(fsm,phi2)
-    #M1 = fromDot("./first_snippets/data/fsm7.dot")
-    #M2 = fromDot("./first_snippets/data/fsm8.dot")
+    # ph3 & ph4 équivalent
+    phi3 = And(Symbol('t_0',BOOL), Not(Symbol('t_1',BOOL)), Symbol('t_2',BOOL), Symbol('t_3',BOOL), Symbol('t_4',BOOL))
+    phi4 = And(Symbol('t_0',BOOL), Symbol('t_1',BOOL), Symbol('t_2',BOOL), Symbol('t_3',BOOL), Not(Symbol('t_4',BOOL)))
+    M3 = create_automata_from_phi(fsm,phi3)
+    M4 = create_automata_from_phi(fsm,phi4)
     M1xM2 = multiply_fsm(M1,M2)
+    M3xM4 = multiply_fsm(M3,M4)
     # enregistrer M1 dans temp1 et M2 dans temp2 (fichiers) et M1xM2
     with open('temp1.dot', 'w') as f:
-        f.write(M1.toDot())
+        f.write(M3.toDot())
     with open('temp2.dot', 'w') as f:
-        f.write(M2.toDot())
+        f.write(M4.toDot())
     with open('temp3.dot', 'w') as f:
-        f.write(M1xM2.toDot())
-    print( find_paths_from_initial(M1xM2.getSinkState(), M1xM2))
-    print( are_equivalent(fsm,phi1,phi2))
+        f.write(M3xM4.toDot())
+    #print( are_equivalent(fsm,phi1,phi2))
+    print( are_equivalent(fsm,phi3,phi4))
+
+    print( find_paths_from_initial(M3xM4.getSinkState(), M3xM4))
+
 
     
     
