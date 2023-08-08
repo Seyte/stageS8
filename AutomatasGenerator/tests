@@ -1,0 +1,17 @@
+# TODO: à mettre dans un fichier de test automatique
+fsm = fromDot("./first_snippets/data/fsm5.dot")
+
+result = fsm.deterministic_executions([Symbol('a'),Symbol('b')])
+print(result)
+#-------------------
+
+stateToReach = fsm.getStates()[1]
+print(find_paths_to_initial(stateToReach, fsm))
+#-------------------
+fsm = fromDot("./first_snippets/data/fsm5.dot")
+phi = And(Symbol('t_1'), Not(Symbol('t_2')), Not(Symbol('t_3')), Symbol('t_0'))
+
+M = create_automata_from_phi(fsm,phi)
+print(fsm.toDot())
+print(M.toDot()) 
+#-------------------
