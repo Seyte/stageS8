@@ -2,10 +2,10 @@ from state import State
 from transition import Transition
 import pygraphviz as pgv
 import filecomparator
-from pysmt.shortcuts import Symbol, Bool, Int, And, Or, Not, Implies, Iff, GT, LT, GE, LE, simplify, Solver, get_model, is_sat, is_unsat, is_valid
+from pysmt.shortcuts import Symbol, Bool, Int, And, Or, Not, Implies, Iff, GT, LT, GE, LE, simplify, Solver, get_model, is_sat, is_unsat, is_valid, get_free_variables
 from pysmt.fnode import FNode
 from collections import defaultdict, deque
-
+from pysmt.typing import BOOL
 
 class FSM :
    def __init__(self, initState=None, data=None) :
@@ -24,9 +24,11 @@ class FSM :
    def nextTransitionId(self) -> int :
       return len(self._transitionsById.keys())
    
-   
    def getInitialState(self) -> State :
       return self._initial
+   
+   def setInitialState(self, state: State) :
+        self._initial = state
 
    def addState(self, state: State) -> State :
       id = self.nextStateId()
@@ -56,16 +58,13 @@ class FSM :
 
          self._outputSet.add(output)
          return transition
+      print("Error: addTransition")
       return None
+
    def removeTransition(self, transition):
-      # Remove the transition from source state's outgoing transitions
       transition.getSrcState().removeOutTr(transition)
-      # Remove the transition from target state's incoming transitions
       transition.getTgtState().removeInTr(transition)
-      # Remove the transition from FSM's transitions
       del self._transitionsById[transition.getID()]
-      # If the transition's output is no longer produced by any other transition,
-      # remove it from the outputSet
       if not any(t.getOutput() == transition.getOutput() for t in self.getTransitions()):
          self._outputSet.remove(transition.getOutput())
 
@@ -91,6 +90,14 @@ class FSM :
       for cle in self._transitionsById.keys() :
          rst +=  " "+self._transitionsById[cle].toNL() + ".\n"
       return rst 
+   
+   #TODO: modifier ça en O(1) au lieu de O(n)
+   def getSinkState(self) -> State :
+       # retourne l'état nommé sink s'il existe, None sinon
+         for state in self._states:
+            if state.getLabel() == "sink":
+               return state
+         return None
 #    --------------------------------- getOutputSet --------------------------------- 
    def deterministic_executions(self, input_symbols):
         queue = deque([(self._initial, input_symbols, [], [])])  
@@ -115,69 +122,6 @@ class FSM :
                     queue.append((next_state, next_inputs, next_outputs, next_symbols))  
 
         return final_results
-
-
-
-
-''' --------------------------------- Algorithme de Moore ---------------------------------  '''
-
-def partition_states_by_output(fsm):
-    # Assuming a state is "accepting" if it has a unique output. Modify as needed.
-    partitions = defaultdict(set)
-    for state in fsm.getStates():
-        for tr in state.getOutTransitions():
-            partitions[tr.getOutput()].add(state)
-            break  # Assuming each state has one unique output through its transitions
-    return list(partitions.values())
-
-def refine_partitions(fsm, partitions, alphabet):
-    # For each partition and each symbol, check if states need further splitting
-    new_partitions = []
-    for partition in partitions:
-        split_dict = defaultdict(set)
-
-        for state in partition:
-            key = []
-            for symbol in alphabet:
-                matching_transitions = [t for t in state.getOutTransitions() if t.getTransitionSymbol() == symbol]
-                if matching_transitions:
-                    destination = matching_transitions[0].getTgtState()
-                    for p in partitions:
-                        if destination in p:
-                            key.append(tuple(p))
-                            break
-                else:
-                    key.append(None)
-            split_dict[tuple(key)].add(state)
-
-        new_partitions.extend(split_dict.values())
-
-    return new_partitions
-
-def moore_minimization(fsm, alphabet):
-    partitions = partition_states_by_output(fsm)
-
-    while True:
-        new_partitions = refine_partitions(fsm, partitions, alphabet)
-        if new_partitions == partitions:  # No further refinement possible
-            break
-        partitions = new_partitions
-
-    # Construct new FSM from partitions
-    minimized_fsm = FSM()
-
-    state_mapping = {}
-    for partition in partitions:
-        new_state = minimized_fsm.addState(State())  # Assuming State class exists
-        for state in partition:
-            state_mapping[state] = new_state
-
-    for transition in fsm.getTransitions():
-        src_state = state_mapping[transition.getSrcState()]
-        tgt_state = state_mapping[transition.getTgtState()]
-        minimized_fsm.addTransition(src_state.getID(), tgt_state.getID(), transition.getTransitionSymbol(), transition.getOutput())
-
-    return minimized_fsm
 
 
 ''' --------------------------------- FromDot ---------------------------------  '''
@@ -213,27 +157,9 @@ def fromDot(filePath):
 
 ''' --------------------------------- multiply_fsm ---------------------------------  '''
 
-def simplify_fsm(fsm):
-    def is_subsumed(cond1, cond2):
-      cond1 = cond1.replace("(", "").replace(")", "").replace("\'", "").replace("\"", "").replace(" ", "")
-      cond2 = cond2.replace("(", "").replace(")", "").replace("\'", "").replace("\"", "").replace(" ", "")
-      return set(cond1.split('&')).issubset(set(cond2.split('&')))
-
-    for state in fsm.getStates():
-        out_transitions = state.getOutTransitions()
-        for transition in out_transitions[:]:
-            for other_transition in out_transitions:
-                if transition != other_transition and transition.getTgtState() == other_transition.getTgtState():
-                    if is_subsumed(str(transition.getInput()), str(other_transition.getInput())):
-                        fsm.removeTransition(transition)
-                        break
-
-
 def multiply_fsm(fsm1, fsm2):
     new_fsm = FSM()
     state_dict = {}
-    sink_state = State("sink")
-    new_fsm.addState(sink_state)
 
     for state1 in fsm1.getStates():
         for state2 in fsm2.getStates():
@@ -242,22 +168,52 @@ def multiply_fsm(fsm1, fsm2):
             new_fsm.addState(new_state)
             state_dict[(state1.getID(), state2.getID())] = new_state
 
+    sink_state = State("sink")
+    new_fsm.addState(sink_state)
+
     for transition1 in fsm1.getTransitions():
         for transition2 in fsm2.getTransitions():
+            print("---------------------------")
+            print("Transition 1 input : ", transition1.getInput())
+            print("Transition 2 input : ", transition2.getInput())
             intersection = And(transition1.getInput(), transition2.getInput())
+            print("Intersection : ", intersection)
             simplified_intersection = simplify(intersection)
-            str_intersection = str(simplified_intersection).strip("() '\"")
-            unique_conditions = ' & '.join(set(str_intersection.split(' & ')))
-            if transition1.getOutput() == transition2.getOutput():
-                if not simplified_intersection.is_false():
-                    src_state = state_dict[(transition1.getSrcState().getID(), transition2.getSrcState().getID())]
-                    tgt_state = state_dict[(transition1.getTgtState().getID(), transition2.getTgtState().getID())]
-                    new_fsm.addTransition(src_state.getID(), tgt_state.getID(), unique_conditions, transition1.getOutput())
+            
+             # Get individual symbols from the transition inputs
+            symbols_t1 = get_free_variables(transition1.getInput())
+            symbols_t2 = get_free_variables(transition2.getInput())
+
+            # Print the type of each symbol
+            for sym in symbols_t1:
+                print("Type of symbol ",sym," in transition1 input:", sym.get_type())
+            for sym in symbols_t2:
+                print("Type of symbol ",sym," in transition2 input:", sym.get_type())
+
+            print(get_model(simplified_intersection))
+            print("is it satisfaible: ",not simplified_intersection.is_false())
+    
+            src_state = state_dict[(transition1.getSrcState().getID(), transition2.getSrcState().getID())]
+            if(transition1.getSrcState().getLabel() == "A" and transition2.getSrcState().getLabel() == "A"):
+                tgt_state = state_dict[(transition1.getTgtState().getID(), transition2.getTgtState().getID())]
+                print("tgt_state : ", tgt_state.getLabel())
+                print("is solvable :", not simplified_intersection.is_false())
+                print("source state label", src_state.getLabel())
+            # si les transitions ont la même sortie et que l'input est solvable
+            if transition1.getOutput() == transition2.getOutput() and not simplified_intersection.is_false():
+                tgt_state = state_dict[(transition1.getTgtState().getID(), transition2.getTgtState().getID())]
+                new_fsm.addTransition(src_state.getID(), tgt_state.getID(), str(simplified_intersection), transition1.getOutput())
             else:
-                if not simplified_intersection.is_false():
-                    src_state = state_dict[(transition1.getSrcState().getID(), transition2.getSrcState().getID())]
-                    new_fsm.addTransition(src_state.getID(), sink_state.getID(), unique_conditions, transition1.getOutput())
-    simplify_fsm(new_fsm)
+                # sinon cela veut dire que input1 ou input2 provoque une sortie différente -> sink
+                # on rajoute deux transitions avec input1 et input2
+                print(" Creation of transition to sink")
+                print("from ", src_state.getLabel(), " to ", sink_state.getLabel(), " with input ", str(transition1.getInput()), " and output ", transition1.getOutput())
+                new_fsm.addTransition(src_state.getID(), sink_state.getID(), str(transition1.getInput()), transition1.getOutput())
+                new_fsm.addTransition(src_state.getID(), sink_state.getID(), str(transition2.getInput()), transition2.getOutput())
+                print("from ", src_state.getLabel(), " to ", sink_state.getLabel(), " with input ", str(transition2.getInput()), " and output ", transition2.getOutput())
+    # set initial state 
+    new_fsm.setInitialState(state_dict[(fsm1.getInitialState().getID(), fsm2.getInitialState().getID())])
+    print("label of initial state ", new_fsm.getInitialState().getLabel())
     return new_fsm
 
 ''' --------------------------------- encodage en pySMT ---------------------------------  '''
@@ -296,9 +252,6 @@ def encode_deterministic_fsm(fsm):
     phi_M = And(*[encode_xi_T(state) for state in states])
     return phi_M
 
-
-''' --------------------------------- Algo de selection des transitions pour rendre l'automate deterministe ---------------------------------  '''
-
 # recupere tous les modèles (toutes les combinaisons de transitions) qui satisfont la formule (description de l'automate non deterministe)
 def get_all_models(formula):
     solver = Solver()
@@ -314,6 +267,8 @@ def get_all_models(formula):
         solver.add_assertion(blocking_clause)
     
     return models
+
+''' --------------------------------- Algo de selection des transitions pour rendre l'automate deterministe ---------------------------------  '''
 
 # find_paths_to_initial permets de trouver un chemin entre l'état en paramètre et l'état initial
 def find_paths_from_initial(state, M): 
@@ -336,10 +291,44 @@ def find_paths_from_initial(state, M):
                 stack.append((src_state, new_path))
     return paths
 
+# create a new automata from phi
+def create_automata_from_phi(M,phi):
+    # solver phi to get which transitions should be disabled in M
+    # then create a new automata from M with the disabled transitions and return it
+    model = get_model(phi)
+
+    new_fsm = FSM()
+    for state in M.getStates():
+        new_fsm.addState(state)
+
+    # add transitions to the new automaton only if they are active
+    for var, value in model:
+        transition_id_str = str(var) # les variables sont de la forme "t_3"
+        transition_id = int(transition_id_str.split('_')[1]) # on extrait l'id de la transition
+        if value.is_true():
+            transition = M._transitionsById[transition_id]
+            new_fsm.addTransition(transition.getSrcState().getID(), transition.getTgtState().getID(), str(transition.getInput()), str(transition.getOutput()))
+
+    return new_fsm
+
+
 # are two fsm pysmt description equivalent?
-def are_equivalent(phi_M1, phi_M2):
-    # too fsms are equivalent if when we multiply them, there is no delta state (sink state)
-    pass
+def are_equivalent(M, phi_M1, phi_M2):
+    # too fsms are equivalent if when we multiply them, there is no path to the sink state
+    # we use phi1 and phi2 using solvers to know which transitions are used in the two fsms
+    # we shall use create_automata_from_phi and multiply_fsm.
+    M1 = create_automata_from_phi(M, phi_M1)
+    print("===============================")
+    print("M1")
+    print(M1.toDot())
+    M2 = create_automata_from_phi(M, phi_M2)
+    print("===============================")
+    print("M2")
+    print(M2.toDot())
+    M1_M2 = multiply_fsm(M1, M2)
+    sink_M1_M2 = M1_M2.getSinkState()
+    paths_to_sink = find_paths_from_initial(sink_M1_M2, M1_M2)
+    return len(paths_to_sink) == 0
     
 def delete_transitions (fsm, transitions_to_delete):
     for transition in transitions_to_delete:
@@ -351,7 +340,6 @@ def minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M,phi):
     pass
     
 def verify_test_adequacy_for_mining(M, phiM, TS, S):
-
     def at_least_two_non_equivalent_DFSMs(phi):
         solutions = get_all_models(phi)
         if len(solutions) < 2:
@@ -423,7 +411,7 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
             verdict = True
     return verdict, M, phi, xd
 
-''' ------------------------- mining oracle ------------------------- '''
+''' --------------------------------- mining oracle --------------------------------- '''
 def precise_oracle_mining(M, TS, S):
     phiM = encode_deterministic_fsm(M)
     TSm = TS.copy()
@@ -441,12 +429,36 @@ def precise_oracle_mining(M, TS, S):
 
 
 if __name__ == '__main__':
-    fsm = fromDot("./first_snippets/data/fsm5.dot")
-    #result = fsm.deterministic_executions([Symbol('a'),Symbol('b')])
-    #print(result)
-    #stateToReach = fsm.getStates()[1]
-    #print(find_paths_to_initial(stateToReach, fsm))
+    fsm = fromDot("./first_snippets/data/fsm6.dot")
+    #phi = And(Symbol('t_1'), Not(Symbol('t_2')), Not(Symbol('t_3')), Symbol('t_0'))
 
+    #M = create_automata_from_phi(fsm,phi)
+    print(fsm.toDot())
+    #print(M.toDot())   
+    # for each transition, print the id, the source state, the destination state, the label
+    for transition in fsm.getTransitions():
+        # print "Inputstate -> output state" for each transitions
+        print(transition.getID(), transition.getSrcState().getLabel(), transition.getTgtState().getLabel(), transition.getInput())
+    # phi toutes transitions actives 5 transitions 0->4
+    # 3 et 4 osef
+    # 
+    #phi1 & phi2 non & équivalent
+    phi1 = And(Not(Symbol('t_0',BOOL)), Symbol('t_1',BOOL), Symbol('t_2',BOOL), Symbol('t_3',BOOL), Symbol('t_4',BOOL))
+    phi2 = And(Symbol('t_0',BOOL), Not(Symbol('t_1',BOOL)), Symbol('t_2',BOOL), Symbol('t_3',BOOL), Symbol('t_4',BOOL))
+    M1 = create_automata_from_phi(fsm,phi1)
+    M2 = create_automata_from_phi(fsm,phi2)
+    #M1 = fromDot("./first_snippets/data/fsm7.dot")
+    #M2 = fromDot("./first_snippets/data/fsm8.dot")
+    M1xM2 = multiply_fsm(M1,M2)
+    # enregistrer M1 dans temp1 et M2 dans temp2 (fichiers) et M1xM2
+    with open('temp1.dot', 'w') as f:
+        f.write(M1.toDot())
+    with open('temp2.dot', 'w') as f:
+        f.write(M2.toDot())
+    with open('temp3.dot', 'w') as f:
+        f.write(M1xM2.toDot())
+    print( find_paths_from_initial(M1xM2.getSinkState(), M1xM2))
+    print( are_equivalent(fsm,phi1,phi2))
 
     
     

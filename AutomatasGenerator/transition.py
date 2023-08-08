@@ -25,15 +25,17 @@ class Transition :
         
         def parse_condition(input):
             input = input.strip()
-            # Check for negation at the start of the string
-            if input.startswith('!'):
-                return Not(parse(input[1:]))
+            input = clean_symbol(input)            
             if '&' in input:
                 # If input contains '&', split it and parse each condition separately
                 return And([parse(i) for i in input.split('&')])
+            # Check for negation at the start of the string
+            if input.startswith('!'):
+                return Not(parse(input[1:].strip()))
+
             # The input is a single symbol (boolean)
             else:
-                return Symbol(clean_symbol(input), BOOL)
+                return Symbol(input, BOOL)
         
         def parse_inequality(input):
             operators = ['>=', '<=', '>', '<']
@@ -73,7 +75,7 @@ class Transition :
                 elif input.isdigit():
                     return Int(int(input))
                 else:
-                    return Symbol(clean_symbol(input))
+                    return Symbol(clean_symbol(input), BOOL)
             else:
                 raise ValueError(f"Unknown input: {input}")
 

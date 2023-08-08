@@ -1,0 +1,13 @@
+digraph fsm {
+  s_0 [label="A" shape="circle"]
+  s_1 [label="B" shape="circle"]
+  s_2 [label="C" shape="circle"]
+  s_3 [label="D" shape="circle"]
+
+  s_0 -> s_1 [label="b & !a/0"]
+  s_0 -> s_2 [label="!b & a/0"]
+  s_0 -> s_3 [label="!b & a/0"]
+  s_1 -> s_1 [label="!b & a/0"]
+  s_2 -> s_1 [label="!b & a/0"]
+
+}
