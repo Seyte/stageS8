@@ -1,7 +1,7 @@
 import random
-from pysmt.shortcuts import Symbol, And, Not, GT, LT, GE, LE, Int, BOOL, INT
+from pysmt.shortcuts import Symbol, And, Not, GT, LT, GE, LE, Int, BOOL, INT, get_free_variables, Or
+from pysmt.fnode import FNode
 import state
-from pysmt.shortcuts import Symbol, And, get_free_variables
 
         
 class Transition :
@@ -27,8 +27,9 @@ class Transition :
             input = input.strip()
             input = clean_symbol(input)            
             if '&' in input:
-                # If input contains '&', split it and parse each condition separately
                 return And([parse(i) for i in input.split('&')])
+            if '|' in input:
+                return Or([parse(i) for i in input.split('|')])
             # Check for negation at the start of the string
             if input.startswith('!'):
                 return Not(parse(input[1:].strip()))
@@ -64,6 +65,10 @@ class Transition :
                 raise ValueError(f"Unknown operator in: {input}")
 
         def parse(input):
+            # si c'est un object de pysmt (FNode) on le garde tel quel
+            if isinstance(input, FNode):
+                return input
+            
             if isinstance(input, list):
                 # Handles the list of strings case and constructs a conjunction
                 return And([parse(i) for i in input])
