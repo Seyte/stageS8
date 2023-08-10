@@ -31,3 +31,15 @@ print(M.toDot())
     print( are_equivalent(fsm,phi3,phi4))
 
     #-------------------
+    non_deterministic_fsm = fromDot("./first_snippets/data/fsm9.dot")
+    # pour tous les états de l'automate imprimer les transitions sortantes
+    expected_fsm = fromDot("./first_snippets/data/fsm9_expected.dot")
+    print("non_deterministic_fsm = \n\n", non_deterministic_fsm.toDot())
+    symbol_a = Symbol("a", BOOL)
+    #symbol_b = Symbol("b", BOOL)
+    # first_test should be baa each letter should be coded as a conjonction b & !a or !b & a
+    #first_test = And(And(symbol_b, Not(symbol_a)), And(Not(symbol_b), symbol_a),And(Not(symbol_b), symbol_a))
+    first_test = [symbol_a]
+    mined_automata = precise_oracle_mining(non_deterministic_fsm, [first_test], expected_fsm)
+    new_fsm = mined_automata[1]
+    print("new_fsm: \n\n", new_fsm.toDot())

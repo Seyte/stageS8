@@ -43,9 +43,6 @@ class State :
       descCandidate = [f"state {self._label}",f"{self._label}"]
       rst = random.choice(descCandidate)
       return rst
-   
-   def defineTransitionOn(self, label):
-      return any(tr["input"] == label for tr in self._outTr)
 
    def removeOutTr(self, transition:Transition):
       self._outTr = [tr for tr in self._outTr if tr["transition"] != transition]

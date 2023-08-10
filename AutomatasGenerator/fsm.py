@@ -6,6 +6,9 @@ from pysmt.shortcuts import Symbol, Bool, Int, And, Or, Not, Implies, Iff, GT, L
 from pysmt.fnode import FNode
 from collections import defaultdict, deque
 from pysmt.typing import BOOL
+from copy import deepcopy
+import time
+
 
 class FSM :
    def __init__(self, initState=None, data=None) :
@@ -108,28 +111,31 @@ class FSM :
          return None
 #    --------------------------------- getOutputSet --------------------------------- 
    def deterministic_executions(self, input_symbols):
-        queue = deque([(self._initial, input_symbols, [], [])])  
+        print("input symbols : ", input_symbols)
+        queue = deque([(self._initial, input_symbols, [])])
         final_results = set()
 
         while queue:
-            current_state, remaining_inputs, previous_outputs, previous_symbols = queue.popleft()
+            current_state, remaining_inputs, previous_execution_steps = queue.popleft()
 
-            if not remaining_inputs:  
-                final_results.add((tuple(previous_outputs), tuple(previous_symbols)))  
+            if not remaining_inputs:
+                final_results.add(tuple(previous_execution_steps))
             else:
-                current_input = remaining_inputs[0]  
-                next_inputs = remaining_inputs[1:]  
+                current_input = remaining_inputs[0]
+                next_inputs = remaining_inputs[1:]
 
-                matching_transitions = [t for t in current_state.getOutTransitions() if is_valid(Implies(t.getInput(), current_input))]
-
+                matching_transitions = [t for t in current_state.getOutTransitions() if is_sat(And(t.getInput(), current_input))]
 
                 for transition in matching_transitions:
                     next_state = transition.getTgtState()
-                    next_outputs = previous_outputs + [transition.getOutput()]  
-                    next_symbols = previous_symbols + [transition.getTransitionSymbol()]  
-                    queue.append((next_state, next_inputs, next_outputs, next_symbols))  
-
+                    next_output = transition.getOutput()
+                    transition_symbol = transition.getTransitionSymbol()  # Getting the transition symbol
+                    # Creating a tuple for each step with the format (input used, output, transition symbol)
+                    next_execution_steps = previous_execution_steps + [(current_input, next_output, transition_symbol)]
+                    queue.append((next_state, next_inputs, next_execution_steps))
         return final_results
+
+
 
 
 ''' --------------------------------- FromDot ---------------------------------  '''
@@ -298,11 +304,18 @@ def find_paths_from_initial(state, M):
 def create_automata_from_phi(M,phi):
     # solver phi to get which transitions should be disabled in M
     # then create a new automata from M with the disabled transitions and return it
-    model = get_model(phi)
+
+    model = None
+    if isinstance(phi, FNode):
+    
+        model = get_model(phi)
+    else:
+        model = phi
+
 
     new_fsm = FSM()
     for state in M.getStates():
-        new_fsm.addState(state)
+        new_fsm.addState(State(state.getLabel(), state.getID()))
 
     # add transitions to the new automaton only if they are active
     for var, value in model:
@@ -321,90 +334,140 @@ def are_equivalent(M, phi_M1, phi_M2):
     # we use phi1 and phi2 using solvers to know which transitions are used in the two fsms
     # we shall use create_automata_from_phi and multiply_fsm.
     M1 = create_automata_from_phi(M, phi_M1)
+    #print("M1 : \n", M1.toDot())
     M2 = create_automata_from_phi(M, phi_M2)
+    #print("M2 : \n", M2.toDot())
     M1_M2 = multiply_fsm(M1, M2)
+    with open ("M1_M2-"+ str(time.time()) + ".dot", "w") as f:
+        f.write(M1_M2.toDot())
+    #print("M1_M2 : \n", M1_M2.toDot())
     sink_M1_M2 = M1_M2.getSinkState()
     paths_to_sink = find_paths_from_initial(sink_M1_M2, M1_M2)
+    #print("paths to sink : ", paths_to_sink)
+    if (len(paths_to_sink) != 0):
+        print("M1 and M2 are not equivalent")
+        print("paths to sink : ", paths_to_sink)
     return (len(paths_to_sink) == 0,paths_to_sink)
     
-def delete_transitions (fsm, transitions_to_delete):
-    for transition in transitions_to_delete:
-        fsm.removeTransition(transition)
+def delete_transitions(fsm, transitions_to_delete):
+    fsm_copy = deepcopy(fsm)
+    transitions = list(fsm_copy.getTransitions())  # Make a copy of the transitions
+    for transition in transitions:
+        if transition.getTransitionSymbol() in transitions_to_delete:
+            fsm_copy.removeTransition(transition)
+    return fsm_copy
 
-# find a minimal distinguishing test for two non equivalent DFSMs
-def minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M,phi):
-    pass
-    
+def determine_Mx_y(M, phi):
+    models = get_all_models(phi)
+    transitions__symbols = set()
+    valid_transitions__symbols = set()
+    for transition in M.getTransitions():
+        symbol = transition.getTransitionSymbol()  
+        transitions__symbols.add(symbol)
+    # si var est vrai dans au moins un modèle, alors la transition est valide
+    for model in models:
+        for transition in transitions__symbols:
+            if model[transition].is_true():
+                valid_transitions__symbols.add(transition)
+    invalid_transitions_symbols = transitions__symbols - valid_transitions__symbols
+    print("invalid_transitions_symbols : ", invalid_transitions_symbols)
+    print("Cela corresponds au transitions suivantes : ")
+    for transition in M.getTransitions():
+        if transition.getTransitionSymbol() in invalid_transitions_symbols:
+            print(transition)
+    # Create a new model Mx_y by deleting the invalid transitions from M
+    Mx_y = delete_transitions(M, invalid_transitions_symbols)
+    return Mx_y
 def verify_test_adequacy_for_mining(M, phiM, TS, S):
+
     def at_least_two_non_equivalent_DFSMs(phi):
+
         solutions = get_all_models(phi)
         if len(solutions) < 2:
             return False
         for i in range(len(solutions)):
             for j in range(i + 1, len(solutions)):
-                if not are_equivalent(solutions[i], solutions[j]):
+                print("test numéro ", i+1,"/",len(solutions)-1," et ", j-i,"/",len(solutions)-i-1)
+                print(are_equivalent(M,solutions[i], solutions[j]))
+                if not are_equivalent(M,solutions[i], solutions[j])[0]:
+                    print("Found two non equivalent DFSMs")
                     return True
         return False
     
-    # recupere tous les modèles (toutes les combinaisons de transitions en PySMT) qui satisfont la formule (automate non deterministe)
-    def deterministic_executions_producing_y_on_test_x(all_executions, y):
-        executions_producing_y = set()
+    # find a minimal distinguishing test for two non equivalent DFSMs
+    def minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M,phi):
+        solutions = get_all_models(phi)
+        if len(solutions) < 2:
+            return False, None
+        return_value = False
+        all_tests = []
+        for i in range(len(solutions)):
+            for j in range(i + 1, len(solutions)):
+                equivalency_test = are_equivalent(M, solutions[i], solutions[j])
+                if not equivalency_test[0]: # [Ø] car are_equivalent renvoie un tuple
+                    # on a trouvé deux modèles non équivalents
+                    return_value = True
+                    all_tests.extend(equivalency_test[1])
+        shortest_test = None
+        if len(all_tests)>0:
+            shortest_test = min(all_tests, key=len)
+        return return_value, shortest_test
 
-        for execution in all_executions:
-            output, _ = execution
-            if output == y:
-                executions_producing_y.add(execution)
-
-        return executions_producing_y
     
-    # & de toutes les transitions de l'execution
-    def encode_execution(execution):
-        _, transitions = execution
-        return And(*transitions)
+    # recupere tous les modèles (toutes les combinaisons de transitions en PySMT) qui satisfont la formule (automate non deterministe)
 
-    def encode_DFSMs_in_M_producing_y_on_test_x(Exy, original_formula):
-        execution_formulas = [encode_execution(execution) for execution in Exy]
-        combined_execution_formula = Or(*execution_formulas)
-        combined_formula = And(original_formula, combined_execution_formula)
-        return combined_formula
+    def deterministic_executions_producing_y_on_test_x(all_executions, y):
+        symbols = set()
+        for execution_all in all_executions:
+            for i in range (len(execution_all)):
+                input_all, output_all, transition_symbol_all = execution_all[i]
+                for execution_y in y:
+                    if (i>=len(execution_y)):
+                        print("Error : the test is not long enough to produce the output y")
+                    input_y, output_y, _ = execution_y[i]
+                    if input_all == input_y and output_all == output_y:
+                        symbols.add(transition_symbol_all)
 
-    # supprime les transitions qui ne peuvent pas être dans l'automate
-    def determine_Mx_y(M, Exy, YMx):
-        # Identify the invalid transitions
-        invalid_transitions = set()
-        for execution1 in YMx:
-            output1, transitions1 = execution1
-            for execution2 in Exy:
-                output2, transitions2 = execution2
-                if output1 != output2: # different output on the same input
-                    for i in range(len(transitions1)): # assuming len(transitions1) == len(transitions2)
-                        if transitions1[i] != transitions2[i]: # this is the divergence, we took the wrong transition
-                            invalid_transitions.add(transitions1[i])
-                            break
-
-        # Create a new model Mx_y by deleting the invalid transitions from M
-        Mx_y = delete_transitions(M, invalid_transitions)
-
-        return Mx_y
-
+        # Return the symbols using And logic if more than one symbol is found
+        if len(symbols) > 1:
+            return And(*symbols)
+        elif len(symbols) == 1:
+            return next(iter(symbols))
+        else:
+            return None
 
     phi = phiM
     verdict = True if not at_least_two_non_equivalent_DFSMs(phi) else False
+
+    print("verdict: ", verdict)
+    if verdict:
+        print("No need to mine")
     xd = None
     while TS and not verdict:
         x = TS.pop()  # Sélectionne et supprime un test de TS
+        print("Using test: ", x)
         # on execute l'automate M sur le test x
         YMx = M.deterministic_executions(x)
+        print ("YMx: ", YMx)
         # on simule l'automate S sur le test x 
         # TODO: remplacer ça par une question à l'utilisateur
         y = S.deterministic_executions(x) 
+        print ("y: ", y)
         Exy = deterministic_executions_producing_y_on_test_x(YMx, y)
-        phi = And(phi, encode_DFSMs_in_M_producing_y_on_test_x(Exy, phi)) 
-        M = determine_Mx_y(M, Exy, YMx)
-        #if at_least_two_non_equivalent_DFSMs(phi):
-        xd = minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M,phi)  
-        if xd != None: # xd est un test qui distingue deux automates non deterministes
+        print ("Exy: ", Exy)
+        # if Exy is a Fnode print something
+        phi = And(phi, Exy) 
+        print ("phi: ", phi)
+        M = determine_Mx_y(M, phi)
+        print ("M apres suppression de certaines transitions: ", M.toDot())
+        test = minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M, phi)
+        print ("test: ", test)
+        if test[0]:
+            xd = test[1]
+            print ("xd: ", xd)
+        else: # pas de test minimal trouvé
             verdict = True
+        print ("verdict: ", verdict)
     return verdict, M, phi, xd
 
 ''' --------------------------------- mining oracle --------------------------------- '''
@@ -416,16 +479,29 @@ def precise_oracle_mining(M, TS, S):
         TSm.append(xd)
         phiM = phi_prime
         M = M_prime
+        TS = [xd]
         verdict, M_prime, phi_prime, xd = verify_test_adequacy_for_mining(M, phiM, TS, S)
 
     # TODO: extraire la solution de phi_prime (pour l'instant je vérifie manuellement)
-    P = phi_prime
+    print(phi_prime)
+    P = create_automata_from_phi(M, phi_prime)
 
     return TSm, P
 
 
 if __name__ == '__main__':
-    fsm = fromDot("./first_snippets/data/fsm6.dot")
-    
+    non_deterministic_fsm = fromDot("./first_snippets/data/fsm4.dot")
+    # pour tous les états de l'automate imprimer les transitions sortantes
+    expected_fsm = fromDot("./first_snippets/data/fsm4_expected.dot")
+    print("non_deterministic_fsm = \n\n", non_deterministic_fsm.toDot())
+    symbol_a = Symbol("a", BOOL)
+    symbol_b = Symbol("b", BOOL)
+    # first_test should be baa each letter should be coded as a conjonction b & !a or !b & a
+    first_test = [[And(symbol_b, Not(symbol_a)), And(Not(symbol_b), symbol_a),And(Not(symbol_b), symbol_a)]]
+    # first_test = [[symbol_a]]
+    mined_automata = precise_oracle_mining(non_deterministic_fsm, first_test, expected_fsm)
+    new_fsm = mined_automata[1]
+    print("new_fsm: \n\n", new_fsm.toDot())
+
     
     
