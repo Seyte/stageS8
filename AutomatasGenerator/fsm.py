@@ -9,7 +9,6 @@ from pysmt.typing import BOOL
 from copy import deepcopy
 import time
 
-
 class FSM :
    def __init__(self, initState=None, data=None) :
       self._initial = initState
@@ -338,9 +337,6 @@ def are_equivalent(M, phi_M1, phi_M2):
     M2 = create_automata_from_phi(M, phi_M2)
     #print("M2 : \n", M2.toDot())
     M1_M2 = multiply_fsm(M1, M2)
-    with open ("M1_M2-"+ str(time.time()) + ".dot", "w") as f:
-        f.write(M1_M2.toDot())
-    #print("M1_M2 : \n", M1_M2.toDot())
     sink_M1_M2 = M1_M2.getSinkState()
     paths_to_sink = find_paths_from_initial(sink_M1_M2, M1_M2)
     #print("paths to sink : ", paths_to_sink)
@@ -380,7 +376,7 @@ def determine_Mx_y(M, phi):
     return Mx_y
 def verify_test_adequacy_for_mining(M, phiM, TS, S):
 
-    def at_least_two_non_equivalent_DFSMs(phi):
+    def at_least_two_non_equivalent_DFSMs(M,phi):
 
         solutions = get_all_models(phi)
         if len(solutions) < 2:
@@ -418,16 +414,26 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
 
     def deterministic_executions_producing_y_on_test_x(all_executions, y):
         symbols = set()
+        valid_execution = None
+        if len(y) != 1:
+            print("Error : y is not a single execution")
+        execution_y = y.pop()
+        # pour toutes les executions non deterministes de M
         for execution_all in all_executions:
+            valid = True
+            if (len(execution_all)!=len(execution_y)):
+                print("Error : the test is not long enough to produce the output y")
             for i in range (len(execution_all)):
                 input_all, output_all, transition_symbol_all = execution_all[i]
-                for execution_y in y:
-                    if (i>=len(execution_y)):
-                        print("Error : the test is not long enough to produce the output y")
-                    input_y, output_y, _ = execution_y[i]
-                    if input_all == input_y and output_all == output_y:
-                        symbols.add(transition_symbol_all)
+                input_y, output_y, _ = execution_y[i]
+                if not(input_all == input_y and output_all == output_y):
+                    valid = False
+            if valid:
+                valid_execution = execution_all
 
+        for _, _, transition_symbol in valid_execution:
+            symbols.add(transition_symbol)
+        
         # Return the symbols using And logic if more than one symbol is found
         if len(symbols) > 1:
             return And(*symbols)
@@ -437,7 +443,7 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
             return None
 
     phi = phiM
-    verdict = True if not at_least_two_non_equivalent_DFSMs(phi) else False
+    verdict = True if not at_least_two_non_equivalent_DFSMs(M,phi) else False
 
     print("verdict: ", verdict)
     if verdict:
@@ -502,6 +508,9 @@ if __name__ == '__main__':
     mined_automata = precise_oracle_mining(non_deterministic_fsm, first_test, expected_fsm)
     new_fsm = mined_automata[1]
     print("new_fsm: \n\n", new_fsm.toDot())
+    # enregister dans le fichier tmp.dot
+    with open("tmp.dot", "w") as file:
+        file.write(new_fsm.toDot())
 
     
     
