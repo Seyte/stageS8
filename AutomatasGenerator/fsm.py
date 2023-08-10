@@ -2,12 +2,11 @@ from state import State
 from transition import Transition
 import pygraphviz as pgv
 import filecomparator
-from pysmt.shortcuts import Symbol, Bool, Int, And, Or, Not, Implies, Iff, GT, LT, GE, LE, Solver, get_model, is_sat, is_unsat, is_valid, get_free_variables, simplify
+from pysmt.shortcuts import Symbol, And, Or, Not, Iff, Solver, get_model, is_sat, simplify
 from pysmt.fnode import FNode
 from collections import defaultdict, deque
 from pysmt.typing import BOOL
 from copy import deepcopy
-import time
 
 class FSM :
    def __init__(self, initState=None, data=None) :
@@ -110,7 +109,6 @@ class FSM :
          return None
 #    --------------------------------- getOutputSet --------------------------------- 
    def deterministic_executions(self, input_symbols):
-        print("input symbols : ", input_symbols)
         queue = deque([(self._initial, input_symbols, [])])
         final_results = set()
 
@@ -248,8 +246,6 @@ def encode_xi_T(state):
         else:
             cnf_formula = And(*(t_k.getTransitionSymbol() for t_k in input_transitions))
         cnf_formulas.append(cnf_formula)
-        # (Debug) print the state, input and the generated condition
-        #print(f"encode_xi_T of state {state.getLabel()} with input {input_value} gives the conditions {cnf_formula}")
 
     # Create a conjunction of all CNF formulas
     xi_T = And(*cnf_formulas)
@@ -333,16 +329,12 @@ def are_equivalent(M, phi_M1, phi_M2):
     # we use phi1 and phi2 using solvers to know which transitions are used in the two fsms
     # we shall use create_automata_from_phi and multiply_fsm.
     M1 = create_automata_from_phi(M, phi_M1)
-    #print("M1 : \n", M1.toDot())
     M2 = create_automata_from_phi(M, phi_M2)
-    #print("M2 : \n", M2.toDot())
     M1_M2 = multiply_fsm(M1, M2)
+
     sink_M1_M2 = M1_M2.getSinkState()
     paths_to_sink = find_paths_from_initial(sink_M1_M2, M1_M2)
-    #print("paths to sink : ", paths_to_sink)
-    if (len(paths_to_sink) != 0):
-        print("M1 and M2 are not equivalent")
-        print("paths to sink : ", paths_to_sink)
+
     return (len(paths_to_sink) == 0,paths_to_sink)
     
 def delete_transitions(fsm, transitions_to_delete):
@@ -366,11 +358,7 @@ def determine_Mx_y(M, phi):
             if model[transition].is_true():
                 valid_transitions__symbols.add(transition)
     invalid_transitions_symbols = transitions__symbols - valid_transitions__symbols
-    print("invalid_transitions_symbols : ", invalid_transitions_symbols)
-    print("Cela corresponds au transitions suivantes : ")
-    for transition in M.getTransitions():
-        if transition.getTransitionSymbol() in invalid_transitions_symbols:
-            print(transition)
+    
     # Create a new model Mx_y by deleting the invalid transitions from M
     Mx_y = delete_transitions(M, invalid_transitions_symbols)
     return Mx_y
@@ -383,10 +371,7 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
             return False
         for i in range(len(solutions)):
             for j in range(i + 1, len(solutions)):
-                print("test numéro ", i+1,"/",len(solutions)-1," et ", j-i,"/",len(solutions)-i-1)
-                print(are_equivalent(M,solutions[i], solutions[j]))
                 if not are_equivalent(M,solutions[i], solutions[j])[0]:
-                    print("Found two non equivalent DFSMs")
                     return True
         return False
     
@@ -445,35 +430,24 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
     phi = phiM
     verdict = True if not at_least_two_non_equivalent_DFSMs(M,phi) else False
 
-    print("verdict: ", verdict)
-    if verdict:
-        print("No need to mine")
     xd = None
     while TS and not verdict:
         x = TS.pop()  # Sélectionne et supprime un test de TS
-        print("Using test: ", x)
         # on execute l'automate M sur le test x
         YMx = M.deterministic_executions(x)
-        print ("YMx: ", YMx)
         # on simule l'automate S sur le test x 
         # TODO: remplacer ça par une question à l'utilisateur
         y = S.deterministic_executions(x) 
-        print ("y: ", y)
         Exy = deterministic_executions_producing_y_on_test_x(YMx, y)
-        print ("Exy: ", Exy)
+
         # if Exy is a Fnode print something
         phi = And(phi, Exy) 
-        print ("phi: ", phi)
         M = determine_Mx_y(M, phi)
-        print ("M apres suppression de certaines transitions: ", M.toDot())
         test = minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M, phi)
-        print ("test: ", test)
         if test[0]:
             xd = test[1]
-            print ("xd: ", xd)
         else: # pas de test minimal trouvé
             verdict = True
-        print ("verdict: ", verdict)
     return verdict, M, phi, xd
 
 ''' --------------------------------- mining oracle --------------------------------- '''
@@ -488,8 +462,6 @@ def precise_oracle_mining(M, TS, S):
         TS = [xd]
         verdict, M_prime, phi_prime, xd = verify_test_adequacy_for_mining(M, phiM, TS, S)
 
-    # TODO: extraire la solution de phi_prime (pour l'instant je vérifie manuellement)
-    print(phi_prime)
     P = create_automata_from_phi(M, phi_prime)
 
     return TSm, P
@@ -499,7 +471,6 @@ if __name__ == '__main__':
     non_deterministic_fsm = fromDot("./first_snippets/data/fsm4.dot")
     # pour tous les états de l'automate imprimer les transitions sortantes
     expected_fsm = fromDot("./first_snippets/data/fsm4_expected.dot")
-    print("non_deterministic_fsm = \n\n", non_deterministic_fsm.toDot())
     symbol_a = Symbol("a", BOOL)
     symbol_b = Symbol("b", BOOL)
     # first_test should be baa each letter should be coded as a conjonction b & !a or !b & a
@@ -507,8 +478,8 @@ if __name__ == '__main__':
     # first_test = [[symbol_a]]
     mined_automata = precise_oracle_mining(non_deterministic_fsm, first_test, expected_fsm)
     new_fsm = mined_automata[1]
-    print("new_fsm: \n\n", new_fsm.toDot())
     # enregister dans le fichier tmp.dot
+    print(new_fsm.toDot())
     with open("tmp.dot", "w") as file:
         file.write(new_fsm.toDot())
 
