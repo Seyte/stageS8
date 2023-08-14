@@ -410,35 +410,42 @@ def verify_test_adequacy_for_mining(M : FSM, phiM : FNode, TS : list, S : FSM):
     
     # recupere tous les modèles (toutes les combinaisons de transitions en PySMT) qui satisfont la formule (automate non deterministe)
 
-    def deterministic_executions_producing_y_on_test_x(all_executions : list, y):
-        symbols = set()
-        valid_execution = None
+    def deterministic_executions_producing_y_on_test_x(all_executions: list, y):
+        and_clauses = []
+        
         if len(y) != 1:
-            print("Error : y is not a single execution")
+            raise TypeError("Error : y is not a single execution")
+
         execution_y = y.pop()
+
         # pour toutes les executions non deterministes de M
         for execution_all in all_executions:
             valid = True
-            if (len(execution_all)!=len(execution_y)):
-                print("Error : the test is not long enough to produce the output y")
-            for i in range (len(execution_all)):
-                input_all, output_all, transition_symbol_all = execution_all[i]
-                input_y, output_y, transition_symbol = execution_y[i]
-                if not(input_all == input_y and output_all == output_y and transition_symbol_all == transition_symbol):
-                    valid = False
-            if valid:
-                valid_execution = execution_all
+            symbols = set()
 
-        for _, _, transition_symbol in valid_execution:
-            symbols.add(transition_symbol)
-        
-        # Return the symbols using And logic if more than one symbol is found
-        if len(symbols) > 1:
-            return And(*symbols)
-        elif len(symbols) == 1:
-            return next(iter(symbols))
+            if len(execution_all) != len(execution_y):
+                raise KeyError("Error : the test is not long enough to produce the output y")
+
+            for i in range(len(execution_all)):
+                input_all, output_all, transition_symbol_all = execution_all[i]
+                input_y, output_y, _ = execution_y[i]
+                
+                if not (input_all == input_y and output_all == output_y):
+                    valid = False
+                    break
+                
+                symbols.add(transition_symbol_all)
+
+            if valid:
+                and_clause = And(*symbols)  # Combine valid execution symbols using And logic
+                and_clauses.append(and_clause)
+
+        # Return the symbols using Or logic to combine all And clauses
+        if and_clauses:
+            return Or(*and_clauses)
         else:
             return None
+
 
     phi = phiM
     verdict = True if not at_least_two_non_equivalent_DFSMs(M,phi) else False
