@@ -538,7 +538,6 @@ def compare_automatas(M : FSM, P : FSM) -> bool:
             continue
 
         visited.add((state_m, state_p))
-
         transitions_m = state_m.getOutTransitions()
         transitions_p = state_p.getOutTransitions()
 
@@ -549,15 +548,13 @@ def compare_automatas(M : FSM, P : FSM) -> bool:
             matched = False
             for transition_p in transitions_p:
                 if (transition_m.getOutput() == transition_p.getOutput() and
-                        is_sat(Iff(transition_m.getInput(), transition_p.getInput()))):
-
+                        is_sat(And(transition_m.getInput(), transition_p.getInput()))):
                     # Enqueue the target states for further comparison
                     queue.append((transition_m.getTgtState(), transition_p.getTgtState()))
                     matched = True
                     break
             if not matched:
-                print("No matching transition found for transition", transition_m)
-                return False  # No matching transition found, automatas are not equivalent
+                raise ValueError("No matching transition found for transition", transition_m)
 
     return True  # All corresponding states and transitions matched, automatas are equivalent
 
@@ -575,11 +572,8 @@ if __name__ == '__main__':
     mined_automata = precise_oracle_mining(non_deterministic_fsm, first_test, expected_fsm)
     new_fsm = mined_automata[1]
     # enregister dans le fichier tmp.dot
-    print(new_fsm.toDot())
     with open("tmp.dot", "w") as file:
         file.write(new_fsm.toDot())
-    print(expected_fsm.toDot())
-    print(new_fsm.toDot())
     print(compare_automatas(expected_fsm, new_fsm))
 
     

@@ -13,10 +13,7 @@ class MyFunctionTest(unittest.TestCase):
         first_test = [[symbol_a]]
         mined_automata = fsm.precise_oracle_mining(non_deterministic_fsm, first_test, expected_fsm)
         new_fsm = mined_automata[1]
-        print(new_fsm.toDot())
-        print(expected_fsm.toDot())
-        #self.assert_(fsm.are_equivalent(new_fsm, expected_fsm))
-        self.assert_(True)
+        self.assertTrue(fsm.compare_automatas(new_fsm, expected_fsm))
 
     def test_fsm_determinisation_2(self):
         non_deterministic_fsm = fsm.fromDot("./first_snippets/data/fsm4.dot")
@@ -26,8 +23,7 @@ class MyFunctionTest(unittest.TestCase):
         first_test = [[And(symbol_b, Not(symbol_a)), And(Not(symbol_b), symbol_a),And(Not(symbol_b), symbol_a)]]
         mined_automata = fsm.precise_oracle_mining(non_deterministic_fsm, first_test, expected_fsm)
         new_fsm = mined_automata[1]
-        self.assert_(True)
-        #self.assert_(fsm.are_equivalent(new_fsm, expected_fsm))
+        self.assertTrue(fsm.compare_automatas(new_fsm, expected_fsm))
         
         
 if __name__ == '__main__':
