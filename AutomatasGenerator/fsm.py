@@ -520,61 +520,70 @@ def compare_automatas(M : FSM, P : FSM) -> bool:
 
                 # Add new merged transition
                 M.addTransition(src_state.getID(), tgt_state.getID(), merged_input, output)
-    #simplify_automata(M)
-    #simplify_automata(P)
-    # TODO: compare the automatas
-    # we start from the init state for both automatas
-    # we check if there is a transition with the same output and with and equivalent (Iff) input
-    # if there is, since the automatas are deterministic, we can go to the accessible states and check if they are equivalent
-    # return whether all accessible states are equivalent
-    queue = deque([(M.getInitialState(), P.getInitialState())])
+    simplify_automata(M)
+    simplify_automata(P)
+    M_P = multiply_fsm(M, M)
 
-    visited = set()
+    sink_M_P = M_P.getSinkState()
+    paths_to_sink = find_paths_from_initial(sink_M_P, M_P)
 
-    while queue:
-        state_m, state_p = queue.popleft()
+    return (len(paths_to_sink) == 0,paths_to_sink)
+    
 
-        if (state_m, state_p) in visited:
-            continue
+def transform_overlapping_transitions(fsm : FSM):
+    # some transitions can overlap in the fsm
+    # for instance, we can have a transition from state 1 to state 2 with input b & c>5 and output 0
+    # and another transition from state 1 to state 3 with input b & c < 7 and output 0
+    # we want to transform it into 4 transitions:
+    # from state 1 to state 2 with input (b & c > 5) & (b & c < 7) and output 0
+    # from state 1 to state 3 with input b & c < 7 & (b & c > 5) and output 0
+    # from state 1 to state 2 with input (b & c > 5) & !(b & c < 7) and output 0
+    # from state 1 to state 3 with input !(b & c < 7) & !(b & c > 5) and output 0
+    # if we have more than 2 transitions overlapping, we will iterate until we find no transitions overlapping
+    has_overlapping_transitions = True
 
-        visited.add((state_m, state_p))
-        transitions_m = state_m.getOutTransitions()
-        transitions_p = state_p.getOutTransitions()
+    while has_overlapping_transitions:
+        has_overlapping_transitions = False
+        transitions_to_remove = []
 
-        if len(transitions_m) != len(transitions_p):
-            return False  # Different number of transitions, automatas are not equivalent
+        # Iterate through transitions to find overlaps
+        for transition1 in fsm.getTransitions():
+            for transition2 in fsm.getTransitions():
+                if transition1 == transition2:
+                    continue
 
-        for transition_m in transitions_m:
-            matched = False
-            for transition_p in transitions_p:
-                if (transition_m.getOutput() == transition_p.getOutput() and
-                        is_sat(And(transition_m.getInput(), transition_p.getInput()))):
-                    # Enqueue the target states for further comparison
-                    queue.append((transition_m.getTgtState(), transition_p.getTgtState()))
-                    matched = True
-                    break
-            if not matched:
-                raise ValueError("No matching transition found for transition", transition_m)
+                src1, tgt1, input1, output1 = transition1.getSrcState().getID(), transition1.getTgtState().getID(), transition1.getInput(), transition1.getOutput()
+                src2, tgt2, input2, output2 = transition2.getSrcState().getID(), transition2.getTgtState().getID(), transition2.getInput(), transition2.getOutput()
 
-    return True  # All corresponding states and transitions matched, automatas are equivalent
+                # Check if the transitions overlap
+                if src1 == src2 and output1 == output2 and is_sat(And(input1, Not(input2))):
+                    has_overlapping_transitions = True
+                    transitions_to_remove += [transition1, transition2]
 
+                    # Create new transitions based on the overlapping logic
+                    fsm.addTransition(src1, tgt1, And(input1, input2), output1)
+                    fsm.addTransition(src1, tgt2, And(input2, input1), output1)
+                    fsm.addTransition(src1, tgt1, And(input1, Not(input2)), output1)
+                    fsm.addTransition(src1, tgt2, And(Not(input2), Not(input1)), output1)
+
+        # Remove original overlapping transitions
+        for transition in transitions_to_remove:
+            fsm.removeTransition(transition)
 
 
 if __name__ == '__main__':
-    non_deterministic_fsm = fromDot("./first_snippets/data/fsm4.dot")
-    # pour tous les états de l'automate imprimer les transitions sortantes
-    expected_fsm = fromDot("./first_snippets/data/fsm4_expected.dot")
-    symbol_a = Symbol("a", BOOL)
-    symbol_b = Symbol("b", BOOL)
-    # first_test should be baa each letter should be coded as a conjonction b & !a or !b & a
-    first_test = [[And(symbol_b, Not(symbol_a)), And(Not(symbol_b), symbol_a),And(Not(symbol_b), symbol_a)]]
-    # first_test = [[symbol_a]]
-    mined_automata = precise_oracle_mining(non_deterministic_fsm, first_test, expected_fsm)
-    new_fsm = mined_automata[1]
-    # enregister dans le fichier tmp.dot
-    with open("tmp.dot", "w") as file:
-        file.write(new_fsm.toDot())
-    print(compare_automatas(expected_fsm, new_fsm))
+    #non_deterministic_fsm = fromDot("./first_snippets/data/fsm11.dot")
+    #print(non_deterministic_fsm.toDot())
+    #transform_overlapping_transitions(non_deterministic_fsm)
+    #print(non_deterministic_fsm.toDot())
+    fsm = fromDot("./first_snippets/data/fsm5.dot")
+    phi = And(Symbol('t_1'), Not(Symbol('t_2')), Not(Symbol('t_3')), Symbol('t_0'))
+
+    M = create_automata_from_phi(fsm,phi)
+    print(fsm.toDot())
+    print(M.toDot()) 
+    print(len(M.getTransitions())==2)
+
 
     
     

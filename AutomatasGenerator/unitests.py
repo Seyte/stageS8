@@ -24,7 +24,31 @@ class MyFunctionTest(unittest.TestCase):
         mined_automata = fsm.precise_oracle_mining(non_deterministic_fsm, first_test, expected_fsm)
         new_fsm = mined_automata[1]
         self.assertTrue(fsm.compare_automatas(new_fsm, expected_fsm))
+
+    def test_fsm_deterministic_execution(self):
+        M = fsm.fromDot("./first_snippets/data/fsm5.dot")
+
+        result = M.deterministic_executions([Symbol('a'),Symbol('b')])
+
+        a = Symbol("a", BOOL)
+        b = Symbol("b", BOOL)
+        t_0 = Symbol("t_0", BOOL)
+        t_1 = Symbol("t_1", BOOL)
+        t_2 = Symbol("t_2", BOOL)
+        t_3 = Symbol("t_3", BOOL)
+
+        my_set = {((a, '1', t_0), (b, '2', t_1)),
+                ((a, '1', t_0), (b, '1', t_0)),
+                ((a, '1', t_0), (b, '4', t_2)),
+                ((a, '2', t_1), (b, '3', t_3))}
+        self.assertTrue(result== my_set)
         
+    def test_fsm_transitions_deletion(self):
+        P = fsm.fromDot("./first_snippets/data/fsm5.dot")
+        phi = And(Symbol('t_1'), Not(Symbol('t_2')), Not(Symbol('t_3')), Symbol('t_0'))
+
+        M = fsm.create_automata_from_phi(P,phi)
+        self.assertTrue(len(M.getTransitions())==2)
         
 if __name__ == '__main__':
     unittest.main()
