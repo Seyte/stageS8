@@ -46,14 +46,15 @@ class FSM :
    def getState(self,id:int) -> State :
       return self._statesById[id]
    
-   def addTransition(self, idSrc, idTgt, input, output) -> Transition:
+   def addTransition(self, idSrc, idTgt, input, output, id = None) -> Transition:
       srcState = self.getState(idSrc)
       tgtState = self.getState(idTgt)
       if (srcState!=None and tgtState!=None and input!=None and output!=None) :
          transition = Transition(srcState, tgtState, input, output)
          srcState.addOutTr(transition)
          tgtState.addInTr(transition)
-         id = self.nextTransitionId()
+         if id == None:
+            id = self.nextTransitionId()
          self._transitionsById[id] = transition
          transition.setID(id)
 
@@ -138,7 +139,7 @@ class FSM :
 ''' --------------------------------- FromDot ---------------------------------  '''
 
 
-def fromDot(filePath):
+def fromDot(filePath : str):
     # Load the .dot file and create a graph from it
     graph = pgv.AGraph(filePath)
 
@@ -151,6 +152,8 @@ def fromDot(filePath):
         state_id = int(node.name.replace('s_', '')) # Extract state id
         state = State(label, state_id)
         fsm.addState(state)
+        if state_id == 0:
+            fsm.setInitialState(state)
 
     # Create the transitions
     for edge in graph.edges():
@@ -160,15 +163,20 @@ def fromDot(filePath):
         input_output = edge.attr.get('label').split('/')
         input_conditions = input_output[0].split(' & ')
         output = input_output[1]
+        real_id = edge.attr.get('myattribute')  # Retrieve the myattribute value
+        if real_id:
+            real_id = int(real_id.replace('t_', ''))  # Extract the real id if present  
+            fsm.addTransition(src_id, tgt_id, input_conditions, output,real_id) # use ids, not State objects
 
+        else:
         # Add the transition to the fsm
-        fsm.addTransition(src_id, tgt_id, input_conditions, output) # use ids, not State objects
+            fsm.addTransition(src_id, tgt_id, input_conditions, output) # use ids, not State objects
 
     return fsm
 
 ''' --------------------------------- multiply_fsm ---------------------------------  '''
 
-def multiply_fsm(fsm1, fsm2):
+def multiply_fsm(fsm1 : FSM, fsm2 : FSM) -> FSM:
     new_fsm = FSM()
     state_dict = {}
 
@@ -224,7 +232,7 @@ def multiply_fsm(fsm1, fsm2):
 
 ''' --------------------------------- encodage en pySMT ---------------------------------  '''
 
-def encode_xi_T(state):
+def encode_xi_T(state : State):
     transitions_by_input = defaultdict(list)
     for transition in state.getOutTransitions():
         transitions_by_input[transition.getInput()].append(transition)
@@ -251,13 +259,13 @@ def encode_xi_T(state):
     xi_T = And(*cnf_formulas)
     return xi_T
 
-def encode_deterministic_fsm(fsm):
+def encode_deterministic_fsm(fsm : FSM):
     states = fsm.getStates()
     phi_M = And(*[encode_xi_T(state) for state in states])
     return phi_M
 
 # recupere tous les modèles (toutes les combinaisons de transitions) qui satisfont la formule (description de l'automate non deterministe)
-def get_all_models(formula):
+def get_all_models(formula : FNode):
     solver = Solver()
     solver.add_assertion(formula)
     
@@ -275,7 +283,7 @@ def get_all_models(formula):
 ''' --------------------------------- Algo de selection des transitions pour rendre l'automate deterministe ---------------------------------  '''
 
 # find_paths_to_initial permets de trouver un chemin entre l'état en paramètre et l'état initial
-def find_paths_from_initial(state, M): 
+def find_paths_from_initial(state : State, M : FSM): 
     paths = []
     initial_state = M.getInitialState()
     stack = [(state, [])]
@@ -296,11 +304,12 @@ def find_paths_from_initial(state, M):
     return paths
 
 # create a new automata from phi
-def create_automata_from_phi(M,phi):
+def create_automata_from_phi(M : FSM,phi : FNode):
     # solver phi to get which transitions should be disabled in M
     # then create a new automata from M with the disabled transitions and return it
 
     model = None
+    #TODO: I should be able to remove this, have to double check
     if isinstance(phi, FNode):
     
         model = get_model(phi)
@@ -310,7 +319,10 @@ def create_automata_from_phi(M,phi):
 
     new_fsm = FSM()
     for state in M.getStates():
-        new_fsm.addState(State(state.getLabel(), state.getID()))
+        new_state = State(state.getLabel(), state.getID())
+        new_fsm.addState(new_state)
+        if state == M.getInitialState():
+            new_fsm.setInitialState(new_state)
 
     # add transitions to the new automaton only if they are active
     for var, value in model:
@@ -318,13 +330,14 @@ def create_automata_from_phi(M,phi):
         transition_id = int(transition_id_str.split('_')[1]) # on extrait l'id de la transition
         if value.is_true():
             transition = M._transitionsById[transition_id]
-            new_fsm.addTransition(transition.getSrcState().getID(), transition.getTgtState().getID(), transition.getInput(), str(transition.getOutput()))
+            new_fsm.addTransition(transition.getSrcState().getID(), transition.getTgtState().getID(), transition.getInput(), str(transition.getOutput()), transition.getID())
 
     return new_fsm
 
 
 # are two fsm pysmt description equivalent?
-def are_equivalent(M, phi_M1, phi_M2):
+def are_equivalent(M : FSM, phi_M1 , phi_M2 ):
+    
     # too fsms are equivalent if when we multiply them, there is no path to the sink state
     # we use phi1 and phi2 using solvers to know which transitions are used in the two fsms
     # we shall use create_automata_from_phi and multiply_fsm.
@@ -362,9 +375,9 @@ def determine_Mx_y(M, phi):
     # Create a new model Mx_y by deleting the invalid transitions from M
     Mx_y = delete_transitions(M, invalid_transitions_symbols)
     return Mx_y
-def verify_test_adequacy_for_mining(M, phiM, TS, S):
+def verify_test_adequacy_for_mining(M : FSM, phiM : FNode, TS : list, S : FSM):
 
-    def at_least_two_non_equivalent_DFSMs(M,phi):
+    def at_least_two_non_equivalent_DFSMs(M : FSM,phi : FNode):
 
         solutions = get_all_models(phi)
         if len(solutions) < 2:
@@ -376,7 +389,7 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
         return False
     
     # find a minimal distinguishing test for two non equivalent DFSMs
-    def minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M,phi):
+    def minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M : FSM,phi : FNode):
         solutions = get_all_models(phi)
         if len(solutions) < 2:
             return False, None
@@ -397,7 +410,7 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
     
     # recupere tous les modèles (toutes les combinaisons de transitions en PySMT) qui satisfont la formule (automate non deterministe)
 
-    def deterministic_executions_producing_y_on_test_x(all_executions, y):
+    def deterministic_executions_producing_y_on_test_x(all_executions : list, y):
         symbols = set()
         valid_execution = None
         if len(y) != 1:
@@ -410,8 +423,8 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
                 print("Error : the test is not long enough to produce the output y")
             for i in range (len(execution_all)):
                 input_all, output_all, transition_symbol_all = execution_all[i]
-                input_y, output_y, _ = execution_y[i]
-                if not(input_all == input_y and output_all == output_y):
+                input_y, output_y, transition_symbol = execution_y[i]
+                if not(input_all == input_y and output_all == output_y and transition_symbol_all == transition_symbol):
                     valid = False
             if valid:
                 valid_execution = execution_all
@@ -451,7 +464,7 @@ def verify_test_adequacy_for_mining(M, phiM, TS, S):
     return verdict, M, phi, xd
 
 ''' --------------------------------- mining oracle --------------------------------- '''
-def precise_oracle_mining(M, TS, S):
+def precise_oracle_mining(M: FSM, TS: list, S : FSM):
     phiM = encode_deterministic_fsm(M)
     TSm = TS.copy()
     verdict, M_prime, phi_prime, xd = verify_test_adequacy_for_mining(M, phiM, TS, S)
@@ -465,6 +478,82 @@ def precise_oracle_mining(M, TS, S):
     P = create_automata_from_phi(M, phi_prime)
 
     return TSm, P
+
+''' --------------------------------- compare_automatas ---------------------------------'''
+# are_equivalent function use phi which is a description of the automatas transitions
+# however we can't use it because the transitions names is not consistent throughout the automatas rafinement
+# so we need to compare the automatas by their transitions one by one
+
+def compare_automatas(M : FSM, P : FSM) -> bool:
+    def simplify_automata(M : FSM):
+        # the automatas are deterministic 
+        # however, there can be multiple transitions with the same target and output from the same source
+        # we need to simplify the automata by merging these transitions
+        # we can do this by creating a new automata with the same states and transitions
+
+        grouped_transitions = {}
+        for transition in M.getTransitions():
+            key = (transition.getSrcState().getID(), transition.getTgtState().getID(), transition.getOutput())
+            if key not in grouped_transitions:
+                grouped_transitions[key] = []
+            grouped_transitions[key].append(transition)
+
+        # Iterate over grouped transitions and merge them if needed
+        for transitions in grouped_transitions.values():
+            if len(transitions) > 1:  # Multiple transitions with same source, target, and output
+                src_state = transitions[0].getSrcState()
+                tgt_state = transitions[0].getTgtState()
+                output = transitions[0].getOutput()
+
+                merged_input = Or(*[transition.getInput() for transition in transitions])
+
+                # Remove original transitions
+                for transition in transitions:
+                    M.removeTransition(transition)
+
+                # Add new merged transition
+                M.addTransition(src_state.getID(), tgt_state.getID(), merged_input, output)
+    #simplify_automata(M)
+    #simplify_automata(P)
+    # TODO: compare the automatas
+    # we start from the init state for both automatas
+    # we check if there is a transition with the same output and with and equivalent (Iff) input
+    # if there is, since the automatas are deterministic, we can go to the accessible states and check if they are equivalent
+    # return whether all accessible states are equivalent
+    queue = deque([(M.getInitialState(), P.getInitialState())])
+
+    visited = set()
+
+    while queue:
+        state_m, state_p = queue.popleft()
+
+        if (state_m, state_p) in visited:
+            continue
+
+        visited.add((state_m, state_p))
+
+        transitions_m = state_m.getOutTransitions()
+        transitions_p = state_p.getOutTransitions()
+
+        if len(transitions_m) != len(transitions_p):
+            return False  # Different number of transitions, automatas are not equivalent
+
+        for transition_m in transitions_m:
+            matched = False
+            for transition_p in transitions_p:
+                if (transition_m.getOutput() == transition_p.getOutput() and
+                        is_sat(Iff(transition_m.getInput(), transition_p.getInput()))):
+
+                    # Enqueue the target states for further comparison
+                    queue.append((transition_m.getTgtState(), transition_p.getTgtState()))
+                    matched = True
+                    break
+            if not matched:
+                print("No matching transition found for transition", transition_m)
+                return False  # No matching transition found, automatas are not equivalent
+
+    return True  # All corresponding states and transitions matched, automatas are equivalent
+
 
 
 if __name__ == '__main__':
@@ -482,6 +571,9 @@ if __name__ == '__main__':
     print(new_fsm.toDot())
     with open("tmp.dot", "w") as file:
         file.write(new_fsm.toDot())
+    print(expected_fsm.toDot())
+    print(new_fsm.toDot())
+    print(compare_automatas(expected_fsm, new_fsm))
 
     
     
