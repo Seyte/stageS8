@@ -2,11 +2,13 @@ from state import State
 from transition import Transition
 import pygraphviz as pgv
 import filecomparator
-from pysmt.shortcuts import Symbol, And, Or, Not, Iff, Solver, get_model, is_sat, simplify
+from pysmt.shortcuts import Symbol, And, Or, Not, Iff, Solver, get_model, is_sat, simplify, is_valid, Equals, Implies, TRUE, FALSE, GE, LE, Int
 from pysmt.fnode import FNode
+from pysmt.environment import get_env
 from collections import defaultdict, deque
-from pysmt.typing import BOOL
+from pysmt.typing import BOOL,INT
 from copy import deepcopy
+from itertools import combinations
 
 class FSM :
    def __init__(self, initState=None, data=None) :
@@ -15,6 +17,7 @@ class FSM :
       self._statesById = dict() 
       self._outputSet =set()
       self._transitionsById =dict()
+      self._currentNextId = -1
 
    def getTransitions(self):
       return self._transitionsById.values()     
@@ -23,7 +26,9 @@ class FSM :
       return len(self._statesById.keys())
    
    def nextTransitionId(self) -> int :
-      return len(self._transitionsById.keys())
+      # i edited that because since we can delete transitions, we can't use the len of the dict anymore
+      self._currentNextId += 1
+      return self._currentNextId
    
    def getInitialState(self) -> State :
       return self._initial
@@ -46,21 +51,20 @@ class FSM :
    def getState(self,id:int) -> State :
       return self._statesById[id]
    
-   def addTransition(self, idSrc, idTgt, input, output, id = None) -> Transition:
+   def addTransition(self, idSrc, idTgt, input, output) -> Transition:
       srcState = self.getState(idSrc)
       tgtState = self.getState(idTgt)
       if (srcState!=None and tgtState!=None and input!=None and output!=None) :
          transition = Transition(srcState, tgtState, input, output)
          srcState.addOutTr(transition)
          tgtState.addInTr(transition)
-         if id == None:
-            id = self.nextTransitionId()
+         id = self.nextTransitionId()
          self._transitionsById[id] = transition
          transition.setID(id)
 
          self._outputSet.add(output)
          return transition
-      print("Error: addTransition")
+      raise KeyError("Error: addTransition")
       return None
    
    def transitionExists(self, idSrc, idTgt, input, output) -> bool:
@@ -72,7 +76,7 @@ class FSM :
                  return True
         return False
 
-   def removeTransition(self, transition):
+   def removeTransition(self, transition : Transition):
       transition.getSrcState().removeOutTr(transition)
       transition.getTgtState().removeInTr(transition)
       del self._transitionsById[transition.getID()]
@@ -163,14 +167,7 @@ def fromDot(filePath : str):
         input_output = edge.attr.get('label').split('/')
         input_conditions = input_output[0].split(' & ')
         output = input_output[1]
-        real_id = edge.attr.get('myattribute')  # Retrieve the myattribute value
-        if real_id:
-            real_id = int(real_id.replace('t_', ''))  # Extract the real id if present  
-            fsm.addTransition(src_id, tgt_id, input_conditions, output,real_id) # use ids, not State objects
-
-        else:
-        # Add the transition to the fsm
-            fsm.addTransition(src_id, tgt_id, input_conditions, output) # use ids, not State objects
+        fsm.addTransition(src_id, tgt_id, input_conditions, output) 
 
     return fsm
 
@@ -218,14 +215,14 @@ def multiply_fsm(fsm1 : FSM, fsm2 : FSM) -> FSM:
                 if is_sat(intersection):
                     # si la transition n'existe pas déjà
                     if not new_fsm.transitionExists(state.getID(), sink_state.getID(), intersection, transition1.getOutput()):
-                        new_fsm.addTransition(state.getID(), sink_state.getID(), intersection, transition1.getOutput())
+                        new_fsm.addTransition(state.getID(), sink_state.getID(), simplify(intersection), transition1.getOutput())
             
             for transition2 in state2.getOutTransitions():
                 intersection = And(input, transition2.getInput())
                 if is_sat(intersection):
                     # si la transition n'existe pas déjà
                     if not new_fsm.transitionExists(state.getID(), sink_state.getID(), intersection, transition2.getOutput()):
-                        new_fsm.addTransition(state.getID(), sink_state.getID(), intersection, transition2.getOutput())
+                        new_fsm.addTransition(state.getID(), sink_state.getID(), simplify(intersection), transition2.getOutput())
     # set initial state 
     new_fsm.setInitialState(state_dict[(fsm1.getInitialState(), fsm2.getInitialState())])
     return new_fsm
@@ -330,7 +327,7 @@ def create_automata_from_phi(M : FSM,phi : FNode):
         transition_id = int(transition_id_str.split('_')[1]) # on extrait l'id de la transition
         if value.is_true():
             transition = M._transitionsById[transition_id]
-            new_fsm.addTransition(transition.getSrcState().getID(), transition.getTgtState().getID(), transition.getInput(), str(transition.getOutput()), transition.getID())
+            new_fsm.addTransition(transition.getSrcState().getID(), transition.getTgtState().getID(), transition.getInput(), str(transition.getOutput()))
 
     return new_fsm
 
@@ -454,16 +451,20 @@ def verify_test_adequacy_for_mining(M : FSM, phiM : FNode, TS : list, S : FSM):
     while TS and not verdict:
         x = TS.pop()  # Sélectionne et supprime un test de TS
         # on execute l'automate M sur le test x
+
         YMx = M.deterministic_executions(x)
+
         # on simule l'automate S sur le test x 
         # TODO: remplacer ça par une question à l'utilisateur
         y = S.deterministic_executions(x) 
+
         Exy = deterministic_executions_producing_y_on_test_x(YMx, y)
 
         # if Exy is a Fnode print something
         phi = And(phi, Exy) 
         M = determine_Mx_y(M, phi)
         test = minimal_distinguishing_test_for_two_non_equivalent_DFSMs(M, phi)
+
         if test[0]:
             xd = test[1]
         else: # pas de test minimal trouvé
@@ -481,7 +482,6 @@ def precise_oracle_mining(M: FSM, TS: list, S : FSM):
         M = M_prime
         TS = [xd]
         verdict, M_prime, phi_prime, xd = verify_test_adequacy_for_mining(M, phiM, TS, S)
-
     P = create_automata_from_phi(M, phi_prime)
 
     return TSm, P
@@ -520,8 +520,12 @@ def compare_automatas(M : FSM, P : FSM) -> bool:
 
                 # Add new merged transition
                 M.addTransition(src_state.getID(), tgt_state.getID(), merged_input, output)
+    print("before simplifcation : \n", M.toDot())
+    print("before simplifcation : \n", P.toDot())
     simplify_automata(M)
     simplify_automata(P)
+    print("M: \n", M.toDot())
+    print("P: \n", P.toDot())
     M_P = multiply_fsm(M, M)
 
     sink_M_P = M_P.getSinkState()
@@ -540,49 +544,77 @@ def transform_overlapping_transitions(fsm : FSM):
     # from state 1 to state 2 with input (b & c > 5) & !(b & c < 7) and output 0
     # from state 1 to state 3 with input !(b & c < 7) & !(b & c > 5) and output 0
     # if we have more than 2 transitions overlapping, we will iterate until we find no transitions overlapping
+
     has_overlapping_transitions = True
 
     while has_overlapping_transitions:
         has_overlapping_transitions = False
-        transitions_to_remove = []
+        transitions_to_remove = set()
+        transitions_to_add = []
 
-        # Iterate through transitions to find overlaps
-        for transition1 in fsm.getTransitions():
-            for transition2 in fsm.getTransitions():
-                if transition1 == transition2:
-                    continue
+        # Iterate through unique pairs of transitions to find overlaps
+        for transition1, transition2 in combinations(fsm.getTransitions(), 2):
+            src1, tgt1, input1, output1 = transition1.getSrcState().getID(), transition1.getTgtState().getID(), transition1.getInput(), transition1.getOutput()
+            src2, tgt2, input2, output2 = transition2.getSrcState().getID(), transition2.getTgtState().getID(), transition2.getInput(), transition2.getOutput()
 
-                src1, tgt1, input1, output1 = transition1.getSrcState().getID(), transition1.getTgtState().getID(), transition1.getInput(), transition1.getOutput()
-                src2, tgt2, input2, output2 = transition2.getSrcState().getID(), transition2.getTgtState().getID(), transition2.getInput(), transition2.getOutput()
+            # Check if the transitions overlap
+            if src1 == src2 and output1 == output2 and is_sat(And(input1, input2)) and not is_valid(Iff(input1, input2)):
+                has_overlapping_transitions = True
+                transitions_to_remove.add(transition1)
+                transitions_to_remove.add(transition2)
 
-                # Check if the transitions overlap
-                if src1 == src2 and output1 == output2 and is_sat(And(input1, Not(input2))):
-                    has_overlapping_transitions = True
-                    transitions_to_remove += [transition1, transition2]
+                transitions_to_add.append((src1, tgt1, simplify(And(input1, input2)), output1))
+                transitions_to_add.append((src1, tgt2, simplify(And(input2, input1)), output1))
+                transitions_to_add.append((src1, tgt1, simplify(And(input1, Not(input2))), output1))
+                transitions_to_add.append((src1, tgt2, simplify(And(Not(input1), input2)), output1))
 
-                    # Create new transitions based on the overlapping logic
-                    fsm.addTransition(src1, tgt1, And(input1, input2), output1)
-                    fsm.addTransition(src1, tgt2, And(input2, input1), output1)
-                    fsm.addTransition(src1, tgt1, And(input1, Not(input2)), output1)
-                    fsm.addTransition(src1, tgt2, And(Not(input2), Not(input1)), output1)
 
         # Remove original overlapping transitions
         for transition in transitions_to_remove:
             fsm.removeTransition(transition)
 
+        # Add new transitions
+        for args in transitions_to_add:
+            fsm.addTransition(*args)
+
+
 
 if __name__ == '__main__':
-    #non_deterministic_fsm = fromDot("./first_snippets/data/fsm11.dot")
-    #print(non_deterministic_fsm.toDot())
-    #transform_overlapping_transitions(non_deterministic_fsm)
-    #print(non_deterministic_fsm.toDot())
-    fsm = fromDot("./first_snippets/data/fsm5.dot")
-    phi = And(Symbol('t_1'), Not(Symbol('t_2')), Not(Symbol('t_3')), Symbol('t_0'))
+    non_deterministic_fsm = fromDot("./first_snippets/data/fsm11.dot")
+    fsm_expected = fromDot("./first_snippets/data/fsm11_expected.dot")
 
-    M = create_automata_from_phi(fsm,phi)
-    print(fsm.toDot())
-    print(M.toDot()) 
-    print(len(M.getTransitions())==2)
+    transform_overlapping_transitions(non_deterministic_fsm)
+
+    symbol_b = Symbol("b", BOOL)
+    symbol_c = Symbol("c", INT)
+    x = GE(symbol_c, Int(6))
+    y =LE(symbol_c, Int(6))
+    a = And(x,y,symbol_b)
+    # If you want to create a list of formulas
+    input = [[a, symbol_b]]
+    mined = precise_oracle_mining(non_deterministic_fsm, input, fsm_expected)
+   # print(mined[1].toDot())
+    get_env().enable_infix_notation = True
+    get_env().print_max_size = 1000000  # or another large value
+    comparaison = compare_automatas(fsm_expected, mined[1])
+    print(comparaison)
+    path_to_sink = comparaison[1]
+    for path in path_to_sink:
+        expression, output_leter = path
+        solver = Solver()
+        solver.add_assertion(expression)
+        if solver.solve():
+            model = solver.get_model()
+            print(model)
+
+    
+            
+        
+    
+    # write it into tmp.dot
+    with open("tmp.dot", "w") as f:
+        f.write(mined[1].toDot())
+        
 
 
     
