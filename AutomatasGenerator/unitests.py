@@ -1,9 +1,10 @@
 import unittest
 import fsm
-from pysmt.shortcuts import Symbol, And, Or, Not, Iff, Solver, get_model, is_sat, simplify
+from pysmt.shortcuts import Symbol, And, Or, Not, Iff, Solver, get_model, is_sat, simplify, is_valid, GE, LE, Int, Equals
+
 from pysmt.fnode import FNode
 from collections import defaultdict, deque
-from pysmt.typing import BOOL
+from pysmt.typing import BOOL, INT
 
 class MyFunctionTest(unittest.TestCase):
     def test_fsm_determinisation_1(self):
@@ -49,6 +50,29 @@ class MyFunctionTest(unittest.TestCase):
 
         M = fsm.create_automata_from_phi(P,phi)
         self.assertTrue(len(M.getTransitions())==2)
-        
+
+    def test_fsm_overlapping_transitions(self):
+        non_deterministic_fsm = fsm.fromDot("./first_snippets/data/fsm12.dot")
+        fsm.transform_overlapping_transitions(non_deterministic_fsm)
+        transitions = non_deterministic_fsm.getTransitions()
+        self.assertTrue(len(transitions)==5)
+    
+    def test_fsm_oracle_on_complex_transitions(self):
+            non_deterministic_fsm = fsm.fromDot("./first_snippets/data/fsm11.dot")
+            fsm_expected = fsm.fromDot("./first_snippets/data/fsm11_expected.dot")
+            
+            fsm.transform_overlapping_transitions(non_deterministic_fsm)
+
+            symbol_b = Symbol("b", BOOL)
+            symbol_c = Symbol("c", INT)
+            x = GE(symbol_c, Int(6))
+            y =LE(symbol_c, Int(6))
+            a = And(x,y,symbol_b)
+            # If you want to create a list of formulas
+            input = [[a, symbol_b]]
+            mined = fsm.precise_oracle_mining(non_deterministic_fsm, input, fsm_expected)
+            comparaison = fsm.compare_automatas(fsm_expected, mined[1])
+            self.assertTrue(comparaison[0])
+
 if __name__ == '__main__':
     unittest.main()

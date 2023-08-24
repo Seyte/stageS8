@@ -78,7 +78,7 @@ plt.plot(range(2, NB_NODES_TO_TEST + 2), percentage_of_wrong_lines)
 plt.xticks(range(2, NB_NODES_TO_TEST + 2), map(int, range(2, NB_NODES_TO_TEST + 2)))
 plt.xlabel("Number of nodes")
 plt.ylabel("Percentage of lines with at least one error")
-plt.title("Percentage of lines with at least one error for each number of nodes ("+  str(NB_TEST_PER_NODE) +" tests per node)")
+plt.title("Percentage of lines with at least one error for each number of nodes for Q&A ("+  str(NB_TEST_PER_NODE) +" tests per node)")
 plt.savefig('plot.png')
 plt.show()
 

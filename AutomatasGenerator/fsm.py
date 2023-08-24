@@ -2,13 +2,18 @@ from state import State
 from transition import Transition
 import pygraphviz as pgv
 import filecomparator
-from pysmt.shortcuts import Symbol, And, Or, Not, Iff, Solver, get_model, is_sat, simplify, is_valid, Equals, Implies, TRUE, FALSE, GE, LE, Int
+from pysmt.shortcuts import Symbol, And, Or, Not, Iff, Solver, get_model, is_sat, simplify, is_valid, GE, LE, Int, Equals
 from pysmt.fnode import FNode
 from pysmt.environment import get_env
 from collections import defaultdict, deque
 from pysmt.typing import BOOL,INT
 from copy import deepcopy
 from itertools import combinations
+from pysmt.printers import HRPrinter
+
+# Enleve la limite de taille des expressions lors des prints pour PySMT
+HRPrinter._max_depth = None  
+HRPrinter._max_width = None  
 
 class FSM :
    def __init__(self, initState=None, data=None) :
@@ -26,7 +31,6 @@ class FSM :
       return len(self._statesById.keys())
    
    def nextTransitionId(self) -> int :
-      # i edited that because since we can delete transitions, we can't use the len of the dict anymore
       self._currentNextId += 1
       return self._currentNextId
    
@@ -65,15 +69,15 @@ class FSM :
          self._outputSet.add(output)
          return transition
       raise KeyError("Error: addTransition")
-      return None
    
    def transitionExists(self, idSrc, idTgt, input, output) -> bool:
         srcState = self.getState(idSrc)
         tgtState = self.getState(idTgt)
         if (srcState!=None and tgtState!=None and input!=None and output!=None) :
              for tr in srcState.getOutTransitions() :
-                if (tr.getTgtState()==tgtState and not Iff(tr.getInput(),input).is_false() and tr.getOutput()==output) :
-                 return True
+                # si on peut trouver une transition sortante de l'état source avec les mêmes paramètres et tel que l'entrée est satisfiable alors ok
+                if (tr.getTgtState()==tgtState and is_valid(Iff(tr.getInput(),input)) and tr.getOutput()==output) :
+                    return True
         return False
 
    def removeTransition(self, transition : Transition):
@@ -87,9 +91,10 @@ class FSM :
       return len(self._transitionsById.keys())
    
    def __str__(self) -> str:
-      pass
+      raise RuntimeError("Plrease use toDot() instead of __str__")
   
    def toDot(self) -> str :
+      # print toutes les transitions
       rst =""
       rst+= f'digraph fsm' + "{"
       for cle in self._statesById.keys() :
@@ -105,13 +110,14 @@ class FSM :
          rst +=  " "+self._transitionsById[cle].toNL() + ".\n"
       return rst 
    
-   #TODO: modifier ça en O(1) au lieu de O(n)
+   # TODO : Ici, on pourrait essayer de déclarer le sink state comme un état de base, ce qui éviterais sa recherche en O(n)
    def getSinkState(self) -> State :
        # retourne l'état nommé sink s'il existe, None sinon
          for state in self._states:
             if state.getLabel() == "sink":
                return state
          return None
+   
 #    --------------------------------- getOutputSet --------------------------------- 
    def deterministic_executions(self, input_symbols):
         queue = deque([(self._initial, input_symbols, [])])
@@ -137,12 +143,11 @@ class FSM :
                     queue.append((next_state, next_inputs, next_execution_steps))
         return final_results
 
-
-
-
 ''' --------------------------------- FromDot ---------------------------------  '''
 
-
+# TODO: be aware; the parsing of the transition may fail if the label aren't simple conjonctions of booleans / integer comparaison
+# or if the variable aren't typed properly. (i.e. if a same variable is used as a boolean and as an integer)
+# you may want to fix that for further changes
 def fromDot(filePath : str):
     # Load the .dot file and create a graph from it
     graph = pgv.AGraph(filePath)
@@ -193,12 +198,12 @@ def multiply_fsm(fsm1 : FSM, fsm2 : FSM) -> FSM:
             simplified_intersection = simplify(intersection)
             src_state = state_dict[(transition1.getSrcState(), transition2.getSrcState())]
             # si les transitions ont la même sortie et que l'input est solvable
-            if transition1.getOutput() == transition2.getOutput() and not simplified_intersection.is_false():
+            if transition1.getOutput() == transition2.getOutput() and is_sat(simplified_intersection):
 
                 tgt_state = state_dict[(transition1.getTgtState(), transition2.getTgtState())]
                 t = new_fsm.addTransition(src_state.getID(), tgt_state.getID(), simplified_intersection, transition1.getOutput())
 
-            elif not simplified_intersection.is_false(): # juste les outputs diffèrent 
+            elif is_sat(simplified_intersection): # juste les outputs diffèrent 
                 new_fsm.addTransition(src_state.getID(), sink_state.getID(), simplified_intersection, transition1.getOutput())
     # reverse state_dict, to get the uple of states from the originals fsms from the new fsm state into state_reverse_dict
     state_reverse_dict = {v: k for k, v in state_dict.items()}
@@ -235,7 +240,7 @@ def encode_xi_T(state : State):
         transitions_by_input[transition.getInput()].append(transition)
 
     cnf_formulas = []
-    for input_value, input_transitions in transitions_by_input.items():
+    for _, input_transitions in transitions_by_input.items():
         n = len(input_transitions)
         terms = []
         for k in range(0, n-1):
@@ -372,6 +377,7 @@ def determine_Mx_y(M, phi):
     # Create a new model Mx_y by deleting the invalid transitions from M
     Mx_y = delete_transitions(M, invalid_transitions_symbols)
     return Mx_y
+
 def verify_test_adequacy_for_mining(M : FSM, phiM : FNode, TS : list, S : FSM):
 
     def at_least_two_non_equivalent_DFSMs(M : FSM,phi : FNode):
@@ -520,12 +526,8 @@ def compare_automatas(M : FSM, P : FSM) -> bool:
 
                 # Add new merged transition
                 M.addTransition(src_state.getID(), tgt_state.getID(), merged_input, output)
-    print("before simplifcation : \n", M.toDot())
-    print("before simplifcation : \n", P.toDot())
     simplify_automata(M)
     simplify_automata(P)
-    print("M: \n", M.toDot())
-    print("P: \n", P.toDot())
     M_P = multiply_fsm(M, M)
 
     sink_M_P = M_P.getSinkState()
@@ -570,52 +572,21 @@ def transform_overlapping_transitions(fsm : FSM):
 
 
         # Remove original overlapping transitions
+       
         for transition in transitions_to_remove:
             fsm.removeTransition(transition)
 
         # Add new transitions
+       
         for args in transitions_to_add:
-            fsm.addTransition(*args)
-
-
+            idSrc, idTgt, input, output = args
+            if not fsm.transitionExists(idSrc, idTgt, input, output):
+                if is_sat(input):
+                    fsm.addTransition(idSrc, idTgt, input, output)
 
 if __name__ == '__main__':
-    non_deterministic_fsm = fromDot("./first_snippets/data/fsm11.dot")
-    fsm_expected = fromDot("./first_snippets/data/fsm11_expected.dot")
-
-    transform_overlapping_transitions(non_deterministic_fsm)
-
-    symbol_b = Symbol("b", BOOL)
-    symbol_c = Symbol("c", INT)
-    x = GE(symbol_c, Int(6))
-    y =LE(symbol_c, Int(6))
-    a = And(x,y,symbol_b)
-    # If you want to create a list of formulas
-    input = [[a, symbol_b]]
-    mined = precise_oracle_mining(non_deterministic_fsm, input, fsm_expected)
-   # print(mined[1].toDot())
-    get_env().enable_infix_notation = True
-    get_env().print_max_size = 1000000  # or another large value
-    comparaison = compare_automatas(fsm_expected, mined[1])
-    print(comparaison)
-    path_to_sink = comparaison[1]
-    for path in path_to_sink:
-        expression, output_leter = path
-        solver = Solver()
-        solver.add_assertion(expression)
-        if solver.solve():
-            model = solver.get_model()
-            print(model)
-
-    
-            
-        
-    
-    # write it into tmp.dot
-    with open("tmp.dot", "w") as f:
-        f.write(mined[1].toDot())
-        
+    pass
 
 
     
-    
+

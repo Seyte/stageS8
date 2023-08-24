@@ -1,0 +1,10 @@
+digraph fsm{
+	s_0 [label="1" shape="circle"]
+	s_1 [label="2" shape="circle"]
+    s_2 [label="3" shape="circle"]
+    s_3 [label="4" shape="circle"]
+
+    s_0 -> s_1[label="c > 0 /0", myattribute="t_0"]
+    s_0 -> s_2[label="c > 1 & c < 3 /0", myattribute="t_1"]
+    s_0 -> s_3[label="c > 2 /0", myattribute="t_2"]
+}
