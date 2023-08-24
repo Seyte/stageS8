@@ -237,7 +237,13 @@ def multiply_fsm(fsm1 : FSM, fsm2 : FSM) -> FSM:
 def encode_xi_T(state : State):
     transitions_by_input = defaultdict(list)
     for transition in state.getOutTransitions():
-        transitions_by_input[transition.getInput()].append(transition)
+        # comme on utilise des transitions complexes, les input peuvent être équivalentes mais non égales
+        # lors de la construction de xi_T on doit faire attention à cela en considérant les transitions équivalentes
+        # si deux transitions sont équivalentes, l'automate n'est pas déterministe, xi_T devrait encoder
+        # ce non déterminisme et le fait qu'une des deux transitions doit être désactivée
+        equivalent_input_present = any(is_valid(Iff(transition.getInput(), existing_input)) for existing_input in transitions_by_input)
+        if not equivalent_input_present:
+            transitions_by_input[transition.getInput()].append(transition)
 
     cnf_formulas = []
     for _, input_transitions in transitions_by_input.items():
